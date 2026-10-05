@@ -29,6 +29,38 @@ an OkHttp `AuthInterceptor` that adds `Authorization: Basic base64(user:pass)`
 credentials with a GET `/api/v2.0/system/info` before storing them in the store. No session cookie
 (`PersistentCookieJar` removed): auth is stateless, every request carries its own credentials.
 
+## "Stay logged in" is unavailable over HTTP
+
+The password persisted by "Stay logged in" (`SessionPreferences`, `EncryptedSharedPreferences`) is
+already encrypted at rest, so storage itself was never the risk here. The risk is what happens
+*after* storage: if the saved server address is `http://`, every app start restores the password
+into `CredentialsStore` and resumes the dashboard's 2s poll, which sends `Authorization: Basic
+base64(user:pass)` in the clear on whatever network the phone happens to be on at that moment —
+home Wi-Fi, a hotel/airport AP, anything — with no further action or warning from the user. For
+HTTPS this isn't a concern (the channel is encrypted), so the restriction only applies to `http://`.
+
+Implementation (`TrueNasUrl.isHttp`, the single `internal` helper now used everywhere this
+decision is made, so the three sites below can't drift from each other or from the checkbox):
+- `LoginScreen`: the "Stay logged in" checkbox is disabled and forced to unchecked while the
+  entered address normalizes to `http://`, with a short explanation shown underneath. It becomes
+  usable again as soon as the address is `https://` (or scheme-less, which normalizes to `https`).
+- `LoginViewModel.connect()`: re-checks `isHttp` before ever writing the password to
+  `SessionPreferences`, independently of the checkbox/UI state — defense in depth in case a future
+  caller reaches this path with `rememberMe = true` some other way. Server address and username
+  are still always persisted (no secret in either), so an HTTP user who can't save the password
+  still only has to retype that one field next time.
+- `TrueNasApplication.onCreate`: if a previously saved session's `serverUrl` is `http://` (older
+  install, or the server was switched from https to http since), the saved password is wiped and
+  `isLoggedIn` is cleared instead of restoring — the user lands back on the login screen. This is
+  the backstop for the case the other two guards can't prevent: a "Stay logged in" session saved
+  while the address was `https://`, where the user then only changes the address to `http://` on a
+  later successful login (rememberMe forced false by the UI at that point, so no *new* password
+  gets written, but the *old* stored one would otherwise still be sitting there tied to the new
+  http address).
+
+Out of scope / unchanged by this: `acceptHttpRisks` consent flow, no IP-range filtering, no Wi-Fi
+SSID detection (would need the location permission — too heavy for this).
+
 ## Connection scenarios considered
 
 End users connect either via an IP or a custom URL/hostname, over HTTP or HTTPS — all 4
@@ -83,6 +115,11 @@ screen.
   mitmproxy interception (see `SECURITY_TODO.md`) — connection refused with a clear message. Still
   need to test the positive path (actually importing a self-signed certificate into Android, then
   a successful connection) — not done, only the rejection was verified dynamically.
+- [ ] Real device/emulator check of the "Stay logged in unavailable over HTTP" flow: checkbox
+  disabled + explanation under an `http://` address, re-enabled on switching to `https://`, and —
+  for an old session saved while on `https://` — confirm that logging in again against `http://`
+  doesn't leave a stale password+`isLoggedIn=true` restorable on next launch (covered at the unit
+  level by `TrueNasUrlTest`/`TrueNasApplicationTest`, not yet exercised in the running app).
 - [ ] Test on a real Android device (not just an emulator), particularly for
   EncryptedSharedPreferences (depends on the hardware Keystore, may behave differently on an
   emulator).

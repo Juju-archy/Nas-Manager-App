@@ -49,9 +49,19 @@ class TrueNasApplication : Application() {
         super.onCreate()
         // Restore a "Stay logged in" session so requests are authenticated as soon as the
         // app starts, before the first screen (which may skip straight to HomeScreen) renders.
-        if (sessionPreferences.isLoggedIn) {
+        if (shouldRestoreSession(sessionPreferences.isLoggedIn, sessionPreferences.serverUrl)) {
             credentialsStore.username = sessionPreferences.username
             credentialsStore.password = sessionPreferences.password
+        } else if (sessionPreferences.isLoggedIn) {
+            // A session saved for an http:// address (older install, or the server was since
+            // switched from https to http) must never be auto-restored: it would resend the
+            // password automatically, in the clear, on whatever network the device joins next.
+            sessionPreferences.password = ""
+            sessionPreferences.isLoggedIn = false
         }
     }
 }
+
+/** Whether a saved "Stay logged in" session should be restored on app start. */
+internal fun shouldRestoreSession(isLoggedIn: Boolean, serverUrl: String): Boolean =
+    isLoggedIn && !TrueNasUrl.isHttp(serverUrl)

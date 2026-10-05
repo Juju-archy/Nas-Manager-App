@@ -110,7 +110,7 @@ fun LoginScreen(
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
-    val isHttp = TrueNasUrl.normalize(uiState.serverUrl).startsWith("http://")
+    val isHttp = TrueNasUrl.isHttp(uiState.serverUrl)
 
     val canSubmit = uiState.serverUrl.isNotBlank() &&
         uiState.username.isNotBlank() &&
@@ -228,16 +228,27 @@ fun LoginScreen(
                         modifier = Modifier.toggleable(
                             value = uiState.rememberMe,
                             onValueChange = onRememberMeChange,
+                            enabled = !isHttp,
                             role = Role.Checkbox,
                         ),
                     ) {
                         Checkbox(
                             checked = uiState.rememberMe,
                             onCheckedChange = null,
+                            enabled = !isHttp,
                         )
                         Text(
                             text = "Stay logged in",
                             style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    if (isHttp) {
+                        Text(
+                            text = "Not available over HTTP — your password would be sent " +
+                                "automatically on any network",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 48.dp, top = 2.dp),
                         )
                     }
                 }
@@ -384,6 +395,7 @@ private fun LoginScreenHttpWarningPreview() {
             uiState = LoginUiState(
                 serverUrl = "http://192.168.1.10",
                 username = "admin",
+                rememberMe = false,
             ),
             onServerUrlChange = {},
             onUsernameChange = {},

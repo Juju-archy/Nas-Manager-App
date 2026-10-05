@@ -11,4 +11,7 @@ object TrueNasUrl {
             "https://$trimmed"
         }
     }
+
+    /** True if [input] normalizes to a cleartext `http://` address (not `https://`). */
+    internal fun isHttp(input: String): Boolean = normalize(input).startsWith("http://")
 }

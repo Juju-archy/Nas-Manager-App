@@ -13,7 +13,10 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   TrueNAS Scale has no `/auth/login` REST route. `CredentialsStore` keeps the credentials in
   memory; `TrueNasAuthRepository.login()` validates them via a GET `/api/v2.0/system/info` before
   storing them there. `SessionPreferences` (EncryptedSharedPreferences) persists them if "Stay
-  logged in" is checked.
+  logged in" is checked. "Stay logged in" is unavailable for an `http://` address (checkbox
+  disabled in `LoginScreen`, guarded again in `LoginViewModel` and on restore in
+  `TrueNasApplication.onCreate`, via the shared `TrueNasUrl.isHttp` helper) — see
+  `CONNECTIVITY_TODO.md`.
 - **Unencrypted HTTP**: allowed to any address (IP or hostname), but only after the user's explicit
   consent (checkbox in `LoginScreen`, `acceptHttpRisks` parameter re-checked in
   `TrueNasAuthRepository.login()`). No filtering by IP range — see `CONNECTIVITY_TODO.md` for the
