@@ -55,13 +55,15 @@ still active on it):
   (`MainActivity`, `exported="true"` only because it's the launcher, normal), no
   `Service`/`BroadcastReceiver`/`ContentProvider`, no deep link/intent filter beyond
   `MAIN`/`LAUNCHER`. Single permission: `INTERNET`. Nothing to fix here.
-- ⚠️ **No `FLAG_SECURE` (axis 8)**: confirmed both statically (`grep FLAG_SECURE` → no result
-  anywhere in `app/src/main/java`) and dynamically — `adb shell screencap` on the foregrounded app
-  (dashboard, session automatically restored via "Stay logged in") produced a fully readable image
-  with real data (hostname, CPU model, load, memory). Had `FLAG_SECURE` been set on the window, the
-  capture would have been black. So: screenshots and the multitasking (recents) preview are **not**
-  blocked on sensitive screens (`LoginScreen` with the password field, and more generally any
-  screen showing server data). **Fixed on 2026-08-30** — see the "To do" section below.
+- ⚠️ **No `FLAG_SECURE` (axis 8)** *(original finding, now fixed)*: confirmed both statically
+  (`grep FLAG_SECURE` → no result anywhere in `app/src/main/java`) and dynamically —
+  `adb shell screencap` on the foregrounded app (dashboard, session automatically restored via
+  "Stay logged in") produced a fully readable image with real data (hostname, CPU model, load,
+  memory). Had `FLAG_SECURE` been set on the window, the capture would have been black. So:
+  screenshots and the multitasking (recents) preview were **not** blocked on sensitive screens
+  (`LoginScreen` with the password field, and more generally any screen showing server data).
+  **Fixed on 2026-08-30, dynamically verified working on 2026-10-06** — see the "To do" section
+  below.
 - ✅ **Restarting the app with "Stay logged in" (axis 3, "reauth after background")**: visually
   confirmed the app relaunches straight to the dashboard (no re-prompt for credentials) — this is
   the intended behavior of "Stay logged in" (`SessionPreferences.isLoggedIn`), not a bug. There's
@@ -185,7 +187,8 @@ normal for this kind of build, not a release-config defect.
   `WindowManager.LayoutParams.FLAG_SECURE` based on `isLoggedIn` (set while `LoginScreen` is
   shown, removed once logged in) via a `DisposableEffect`. Decision: only the login screen, not
   the dashboard (the server data shown afterward is judged less sensitive than the credentials
-  form). Not yet verified dynamically (requires rebuilding the app, no JDK on this machine).
+  form). **Verified dynamically on 2026-10-06**: `adb shell screencap`/recents preview are black
+  while `LoginScreen` is showing, and readable again once logged in — matches the intended scope.
 - [x] Build a real release APK and redo the release-focused checks — done 2026-09-11 (this
   machine now has a working JDK/Gradle toolchain): `./gradlew assembleRelease` succeeds,
   `aapt2 dump xmltree` on the merged manifest shows **no `debuggable` attribute at all** (AGP's
@@ -355,19 +358,26 @@ point flagged above was fixed rather than just tracked.
     separate flag needed with this DSL) — `optimizeReleaseResources`/
     `convertShrunkResourcesToBinaryRelease` both ran.
   - `./gradlew compileDebugKotlin testDebugUnitTest assembleRelease` all green after this change.
-- ⚠️ **Not done here, still needed before actually publishing**: a real dynamic smoke test of the
-  signed release build on a device/emulator (login, dashboard polling, reporting graphs, apps,
-  alerts, system screen) — compiling and a dex-level keep-rule check are not a substitute for
-  actually exercising Gson (de)serialization end-to-end against a live TrueNAS server on this
-  specific build type. Do this before shipping.
+- ✅ **Done 2026-10-06**: dynamic smoke test of the signed release build on a device/emulator
+  (login, dashboard polling, reporting graphs, apps, alerts, system screen) against a live
+  TrueNAS server — compiling and the dex-level keep-rule check above are not a substitute for
+  actually exercising Gson (de)serialization end-to-end on this specific build type, so this had
+  to be run separately.
 - ℹ️ Build emits one forward-looking deprecation warning: `'val files: SetProperty<File>' is
   deprecated. Use keepRules source folder instead.` No such folder-based API actually exists yet in
   AGP 9.3.2 or 9.4.0 (checked both `KeepRules` DSL class files directly) — `files.add(...)` is the
   only working option today. Harmless, just something to revisit on a future AGP upgrade.
-- Signing: `assembleRelease` here produces an **unsigned** APK (`app-release-unsigned.apk`) — no
-  signing config is set up yet in `app/build.gradle.kts`. A signing key/keystore and a
-  `signingConfigs` block are still needed before this build can actually be installed on a device
-  or uploaded to a store listing; out of scope for this specific change.
+- ✅ **Signing — done 2026-10-06**: `app/build.gradle.kts` now declares a `signingConfigs.create("release")`,
+  built only if `RELEASE_STORE_FILE` is set, reading `storeFile`/`storePassword`/`keyAlias`/
+  `keyPassword` via `providers.gradleProperty(...)` (`RELEASE_STORE_FILE`, `RELEASE_STORE_PASSWORD`,
+  `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`) — none of these four values, nor the keystore file
+  itself, are committed to the repo; they live in the signer's own `~/.gradle/gradle.properties`
+  (or CI secrets), outside this project entirely. `buildTypes.release` wires this config in only
+  when it exists (`signingConfigs.findByName("release")?.let { signingConfig = it }`), so
+  `assembleRelease` still falls back to an unsigned APK with no configuration failure for anyone
+  without those properties set — confirmed both ways. The keystore file and its four passwords are
+  backed up and rotated outside this repo; see `README.md` for the build-time convention (env/property
+  names), not for where that backup lives.
 
 ## Points of attention
 

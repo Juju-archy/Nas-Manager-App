@@ -85,6 +85,29 @@ On the login screen, provide:
 
 > Note: if your TrueNAS uses a self-signed certificate, it must be imported into Android's security settings for the HTTPS connection to succeed.
 
+## Building a signed release
+
+```bash
+./gradlew assembleRelease
+```
+
+Without any further setup this produces an **unsigned** APK (`app-release-unsigned.apk`) — fine
+for local testing, not installable as an update or uploadable to a store listing. To get a signed
+`app-release.apk` instead, set these four properties in your own `~/.gradle/gradle.properties`
+(never in this repo):
+
+```properties
+RELEASE_STORE_FILE=/absolute/path/to/your.keystore
+RELEASE_STORE_PASSWORD=...
+RELEASE_KEY_ALIAS=...
+RELEASE_KEY_PASSWORD=...
+```
+
+`app/build.gradle.kts` reads them via `providers.gradleProperty(...)` and only creates the
+`release` signing config when `RELEASE_STORE_FILE` is present, so the build never fails for a
+contributor who doesn't have the signing key. The keystore itself and its passwords are kept and
+backed up outside this repository — see `SECURITY_TODO.md`.
+
 ## Project structure
 
 ```
