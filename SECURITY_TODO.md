@@ -122,14 +122,14 @@ the host machine. Tested against the user's real TrueNAS (LAN), read-only.
 `jadx` 1.5.6 installed from the official repos (`pacman -S jadx` — the `apk-tools` package the
 user had installed beforehand is actually the Alpine package manager, unrelated, not to be
 confused with it). APK extracted from the emulator via `adb pull` on the path from
-`pm path com.example.mytruenasscale` — **this is the debug build already installed**
+`pm path com.nasmanagerapp` — **this is the debug build already installed**
 (`installDebug`), not a real release APK (no JDK on this machine to build one): the findings below
 about obfuscation therefore assume nothing new about the future release build
 (`optimization.enable = false` already documented above), and the `debuggable=true` found in it is
 normal for this kind of build, not a release-config defect.
 
 - ✅ **Visual confirmation of the lack of obfuscation**: the ~55 classes of the
-  `com.example.mytruenasscale` package (and ~17,700 classes overall, dependencies included) decompile
+  `com.nasmanagerapp` package (and ~17,700 classes overall, dependencies included) decompile
   with their original class/method/field names intact (`TrueNasAuthRepository`,
   `DashboardViewModel.loadSystemSettings`, `SessionPreferences.KEY_PASSWORD`...) — nothing for an
   attacker to "break", reading it is as easy as the source code.
@@ -286,7 +286,7 @@ complaint was specifically about the AGP plugin version, not those. Re-verified:
 
 ## Static re-check after the package rename + UI text changes (2026-10-04)
 
-Fresh pass over `app/src/main/java/` after renaming the package from `com.example.mytruenasscale`
+Fresh pass over `app/src/main/java/` after renaming the package from `com.nasmanagerapp`
 to `com.nasmanagerapp` (`applicationId`/`namespace` in `app/build.gradle.kts` updated accordingly)
 and after the "NasManager mobile" / "Compatible with TrueNAS Scale" text additions in
 `LoginScreen.kt`, `DashboardScreen.kt` and `AppDrawer.kt`:
