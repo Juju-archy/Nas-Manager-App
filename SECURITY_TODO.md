@@ -193,6 +193,8 @@ normal for this kind of build, not a release-config defect.
   machine now has a working JDK/Gradle toolchain): `./gradlew assembleRelease` succeeds,
   `aapt2 dump xmltree` on the merged manifest shows **no `debuggable` attribute at all** (AGP's
   release default, not forced true) — confirms the assumption from 2026-08-30 was correct.
+- [x] Dynamic smoke test of the signed, R8-optimized release build — done and validated
+  2026-10-06, see "R8 enabled for release" below.
 - [x] Connect over HTTPS with an **unimported** self-signed certificate → confirmed on 2026-08-29
   (see the dynamic section below): clear message, no silent fallback.
 - [x] Intercept HTTPS traffic with a proxy (mitmproxy) and a certificate not trusted by
@@ -361,9 +363,9 @@ point flagged above was fixed rather than just tracked.
     separate flag needed with this DSL) — `optimizeReleaseResources`/
     `convertShrunkResourcesToBinaryRelease` both ran.
   - `./gradlew compileDebugKotlin testDebugUnitTest assembleRelease` all green after this change.
-- ✅ **Done 2026-10-06**: dynamic smoke test of the signed release build on a device/emulator
-  (login, dashboard polling, reporting graphs, apps, alerts, system screen) against a live
-  TrueNAS server — compiling and the dex-level keep-rule check above are not a substitute for
+- ✅ **Done and validated 2026-10-06**: dynamic smoke test of the signed release build on a
+  device/emulator (login, dashboard polling, reporting graphs, apps, alerts, system screen) against
+  a live TrueNAS server — passed, no R8/Gson regression found — compiling and the dex-level keep-rule check above are not a substitute for
   actually exercising Gson (de)serialization end-to-end on this specific build type, so this had
   to be run separately.
 - ℹ️ Build emits one forward-looking deprecation warning: `'val files: SetProperty<File>' is

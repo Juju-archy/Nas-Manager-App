@@ -73,9 +73,9 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   `DashboardRepository.kt`.
 - `SECURITY_TODO.md`: security testing tracking (static and dynamic) beyond what's already covered
   by `CONNECTIVITY_TODO.md`. Started as a personal, undistributed project but now intended for
-  actual publishing (R8/obfuscation enabled on the release build since 2026-10-04) — check this
-  file for what's still open before shipping (APK signing, a dynamic smoke test of the release
-  build).
+  actual publishing (R8/obfuscation enabled on the release build since 2026-10-04; APK signing
+  and a dynamic smoke test of the signed release build both done 2026-10-06) — check this file
+  for what's still open before shipping.
 - `ALERTS_TODO.md`: dedicated tracking for alerts (`alert.list`, formats verified live via `curl`
   against a real server, parsing decisions, tests pending). Check before touching
   `AlertsScreen.kt` or the `alert.*` calls in `DashboardRepository.kt`.
