@@ -50,6 +50,12 @@ android {
     buildFeatures {
         compose = true
     }
+    // AGP otherwise embeds a dependency metadata block encrypted with a Google key, which F-Droid
+    // rejects as an opaque blob.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
 }
 
 dependencies {

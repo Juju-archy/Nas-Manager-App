@@ -313,6 +313,9 @@ and after the "NasManager mobile" / "Compatible with TrueNAS Scale" text additio
   `MyTrueNasScaleTheme` (`themes.xml`, `ui/theme/Theme.kt`) and `app_name` in `strings.xml` still
   say `myTrueNasScale` — purely cosmetic, not in scope of this security check, flagged here so it
   isn't mistaken for a rename that was missed.
+  ✅ Since resolved: the theme is `Theme.NasManagerApp` and `app_name` is `NasManager mobile`
+  (checked 2026-10-06, while preparing the F-Droid listing — which uses "NasManager" as its title,
+  not "TrueNAS", a registered trademark).
 - Nothing new found beyond what's already tracked below ("Points of attention") and in
   `CONNECTIVITY_TODO.md` — no change in those risk acceptances from this pass.
 
