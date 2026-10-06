@@ -10,7 +10,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nasmanagerapp"
+        applicationId = "app.nasmanager"
         minSdk = 35
         targetSdk = 37
         versionCode = 1
