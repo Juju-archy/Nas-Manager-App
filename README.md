@@ -68,7 +68,7 @@ Unencrypted HTTP (no certificate) is allowed to any address (IP or hostname), bu
 ## Requirements
 
 - Android Studio (latest stable version)
-- JDK 11+
+- JDK 17+ (required by the Android Gradle Plugin 9)
 - A TrueNAS Scale server reachable from the phone/emulator, with the REST API enabled
 
 ## Getting started
