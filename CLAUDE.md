@@ -8,7 +8,9 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
 - **Network**: OkHttp + Gson, manual REST calls to `/api/v2.0/...` (no Retrofit). The authenticated
   `OkHttpClient` (`TrueNasApplication.okHttpClient`) carries an `AuthInterceptor` that adds auth to
   every request; a second, separate `imageOkHttpClient` (no interceptor) is used only for app icons
-  served by a public CDN, so the NAS credentials are never sent there — see `APPS_TODO.md`.
+  served by a public CDN, so the NAS credentials are never sent there — see `APPS_TODO.md`. Icons
+  are PNG/JPEG (`BitmapFactory`) or SVG (AndroidSVG, internal XML entities disabled app-wide in
+  `TrueNasApplication.onCreate`), with a bounded download and decode size (`AppsScreen.kt`).
 - **Auth**: Basic Auth (`Authorization: Basic base64(user:pass)`), no API key or session cookie —
   TrueNAS Scale has no `/auth/login` REST route. `CredentialsStore` keeps the credentials in
   memory; `TrueNasAuthRepository.login()` validates them via a GET `/api/v2.0/system/info` before

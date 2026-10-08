@@ -1,6 +1,7 @@
 package com.nasmanagerapp
 
 import android.app.Application
+import com.caverock.androidsvg.SVG
 import com.nasmanagerapp.data.auth.SessionPreferences
 import com.nasmanagerapp.data.auth.TrueNasAuthRepository
 import com.nasmanagerapp.data.dashboard.DashboardRepository
@@ -47,6 +48,10 @@ class TrueNasApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // App icons are SVGs fetched from a NAS-supplied URL (see `SECURITY_TODO.md`): refuse
+        // `<!ENTITY>` definitions so a crafted icon can't expand into gigabytes ("billion laughs").
+        // External entities are already disabled by AndroidSVG itself; no real icon uses either.
+        SVG.setInternalEntitiesEnabled(false)
         // Restore a "Stay logged in" session so requests are authenticated as soon as the
         // app starts, before the first screen (which may skip straight to HomeScreen) renders.
         if (shouldRestoreSession(sessionPreferences.isLoggedIn, sessionPreferences.serverUrl)) {

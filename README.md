@@ -7,6 +7,7 @@ Android mobile app for connecting to a **TrueNAS Scale** server via its official
 - **Kotlin** + **Jetpack Compose** (Material 3) — Android native only for now, no iOS version yet.
 - **OkHttp** for network calls to the TrueNAS Scale API (manual REST calls, no Retrofit).
 - **Gson** for JSON serialization.
+- **AndroidSVG** to render app icons served as SVG (PNG/JPEG go through Android's `BitmapFactory`).
 - **Coroutines / StateFlow** for async state management (MVVM architecture).
 
 ## Architecture

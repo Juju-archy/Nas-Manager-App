@@ -1,5 +1,8 @@
 package com.nasmanagerapp.ui.dashboard
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -45,14 +48,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.caverock.androidsvg.RenderOptions
+import com.caverock.androidsvg.SVG
 import com.nasmanagerapp.TrueNasApplication
 import com.nasmanagerapp.data.dashboard.AppInfo
 import com.nasmanagerapp.data.dashboard.AppState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import okio.BufferedSource
 
 /**
  * Apps screen, reachable from the drawer's "Apps" entry — lists installed apps
@@ -283,10 +290,11 @@ private fun AppStateChip(state: AppState) {
 @Composable
 private fun AppIcon(url: String?) {
     val app = LocalContext.current.applicationContext as TrueNasApplication
+    val sizePx = with(LocalDensity.current) { 40.dp.roundToPx() }
     var bitmap by remember(url) { mutableStateOf<ImageBitmap?>(null) }
 
     LaunchedEffect(url) {
-        bitmap = url?.let { fetchIconBitmap(app, it) }
+        bitmap = url?.let { fetchIconBitmap(app, it, sizePx) }
     }
 
     val loaded = bitmap
@@ -310,14 +318,82 @@ private fun AppIcon(url: String?) {
     }
 }
 
-private suspend fun fetchIconBitmap(app: TrueNasApplication, url: String): ImageBitmap? = withContext(Dispatchers.IO) {
+/**
+ * The catalog CDN serves icons as PNG/JPEG *or* SVG depending on the app (e.g. `plex` → `icon.png`,
+ * `jellyfin` → `icon.svg`) — [android.graphics.BitmapFactory] only decodes raster formats, so SVGs
+ * are rasterized via AndroidSVG at [sizePx] instead.
+ *
+ * The icon URL comes from the NAS (rewritable on the wire over `http://`, arbitrary for a custom
+ * app), so both the download ([MAX_ICON_BYTES]) and the decoded bitmap (≈ [sizePx], see
+ * [decodeRaster]) are bounded — an oversized file or a "decompression bomb" PNG can't exhaust memory.
+ */
+private suspend fun fetchIconBitmap(app: TrueNasApplication, url: String, sizePx: Int): ImageBitmap? = withContext(Dispatchers.IO) {
     runCatching {
         val request = Request.Builder().url(url).get().build()
         app.imageOkHttpClient.newCall(request).execute().use { response ->
-            val bytes = if (response.isSuccessful) response.body?.bytes() else null
-            bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+            val bytes = if (response.isSuccessful) response.body?.source()?.let { readAtMost(it, MAX_ICON_BYTES) } else null
+            bytes?.let {
+                if (isSvgIcon(response.header("Content-Type"), url)) {
+                    renderSvg(it, sizePx)
+                } else {
+                    decodeRaster(it, sizePx)
+                }?.asImageBitmap()
+            }
         }
     }.getOrNull()
+}
+
+/** Real catalog icons are ≤ ~80 KB (checked on the CDN 2026-10-08) — 1 MiB leaves ample margin. */
+internal const val MAX_ICON_BYTES = 1L * 1024 * 1024
+
+/** The whole body if it's at most [maxBytes], `null` (nothing more read) if it's larger. */
+internal fun readAtMost(source: BufferedSource, maxBytes: Long): ByteArray? {
+    if (source.request(maxBytes + 1)) return null
+    return source.buffer.readByteArray()
+}
+
+/** Reads only the header for the dimensions, then decodes subsampled down to about [sizePx] (e.g. 1024 px → 128 px). */
+private fun decodeRaster(bytes: ByteArray, sizePx: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = iconSampleSize(bounds.outWidth, bounds.outHeight, sizePx)
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+}
+
+/**
+ * Largest power of 2 that keeps the longer side ≥ [targetPx] — the icon is fitted by its longer
+ * side, so it's never upscaled (blurry), and memory stays bounded even for an extreme aspect ratio.
+ */
+internal fun iconSampleSize(width: Int, height: Int, targetPx: Int): Int {
+    val longerSide = maxOf(width, height)
+    var sampleSize = 1
+    while (longerSide / (sampleSize * 2) >= targetPx) {
+        sampleSize *= 2
+    }
+    return sampleSize
+}
+
+/** `Content-Type` first (the CDN sends `image/svg+xml`), falling back to the URL's extension if the header is missing. */
+internal fun isSvgIcon(contentType: String?, url: String): Boolean =
+    contentType?.substringBefore(';')?.trim()?.equals("image/svg+xml", ignoreCase = true)
+        ?: url.substringBefore('?').endsWith(".svg", ignoreCase = true)
+
+internal fun renderSvg(bytes: ByteArray, sizePx: Int): Bitmap {
+    val svg = SVG.getFromInputStream(bytes.inputStream())
+    // Without a viewBox AndroidSVG can't scale the drawing to the viewport — derive one from width/height.
+    if (svg.documentViewBox == null && svg.documentWidth > 0 && svg.documentHeight > 0) {
+        svg.setDocumentViewBox(0f, 0f, svg.documentWidth, svg.documentHeight)
+    }
+    // A root width/height (e.g. Immich's `width="590"`) would otherwise be drawn at that size instead
+    // of the viewport, leaving only the drawing's top-left corner in the bitmap.
+    svg.setDocumentWidth("100%")
+    svg.setDocumentHeight("100%")
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    svg.renderToCanvas(Canvas(bitmap), RenderOptions().viewPort(0f, 0f, sizePx.toFloat(), sizePx.toFloat()))
+    return bitmap
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

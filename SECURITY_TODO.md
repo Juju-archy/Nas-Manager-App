@@ -384,6 +384,34 @@ point flagged above was fixed rather than just tracked.
   backed up and rotated outside this repo; see `README.md` for the build-time convention (env/property
   names), not for where that backup lives.
 
+## App icons: SVG support + bounded download/decode (2026-10-08)
+
+Review of the SVG-icon change (`AppsScreen.kt`, see `APPS_TODO.md`), which added AndroidSVG
+(`com.caverock:androidsvg-aar:1.4`).
+
+- Icon URLs come from the NAS (`metadata.icon`) — rewritable on the wire over `http://`, arbitrary
+  for a custom app — so the fetch is now bounded: body capped at 1 MiB (`readAtMost`,
+  `MAX_ICON_BYTES`; real catalog icons are ≤ ~80 KB), raster icons decoded subsampled to about the
+  displayed 40dp from the screen density (`iconSampleSize`, longer side, so an extreme aspect ratio
+  can't bypass it), SVGs rendered into a fixed-size bitmap. Before, a large file or a
+  "decompression bomb" PNG could exhaust memory (pre-existing for PNG). Unit-tested.
+- AndroidSVG: no permission/manifest entry added; external XML entities explicitly disabled in its
+  parser (no XXE); no `SVGExternalFileResolver` registered (an SVG can't trigger other fetches);
+  R8 release build OK. Still `imageOkHttpClient` (no credentials).
+- `.env` (local test API key) added to `.gitignore`; key checked absent from git history, the diff
+  and `build/`.
+
+Still open:
+- [x] AndroidSVG enables **internal** XML entities by default (`<!ENTITY ...>` in the SVG's DTD,
+  "billion laughs" expansion risk) — fixed: `SVG.setInternalEntitiesEnabled(false)` in
+  `TrueNasApplication.onCreate` (global setting, covers any future AndroidSVG use). Checked on the
+  emulator with a harmless 10³ trap SVG (entity in `<title>`): library default → title expanded to
+  3000 chars; with the app setting → 0, no error, and the Immich icon still renders.
+- [ ] Icon fetch accepts any scheme, `http://` included — restrict to `https://` (the TrueNAS CDN
+  is HTTPS)?
+- [ ] AndroidSVG's last release is 1.4 (2019), effectively unmaintained — no known CVE, but no CVE
+  database was queried; re-check at the next dependency audit.
+
 ## Points of attention
 
 - ~~**`app/build.gradle.kts`**: `buildTypes.release.optimization.enable = false`~~ — fixed

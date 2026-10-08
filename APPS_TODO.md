@@ -96,9 +96,27 @@ triggering a real update during verification. The format was confirmed without t
   (`TrueNasApplication.imageOkHttpClient`) — icon URLs point to a public CDN
   (`media.sys.truenas.net`), not the user's server; sending the NAS's Basic Auth to a third party
   would be a needless credential leak.
-- No image-loading library (Coil considered then dropped — see below): manual bitmap loading via
-  `BitmapFactory.decodeByteArray`, consistent with the project's philosophy ("OkHttp + Gson... no
-  Retrofit").
+- No image-loading library (Coil considered then dropped — see below): manual loading in
+  `fetchIconBitmap`, consistent with the project's philosophy ("OkHttp + Gson... no Retrofit") —
+  `BitmapFactory` for PNG/JPEG, AndroidSVG (a renderer, not a loader) for SVG, see below.
+- Icon formats vary per app on the CDN (checked via `curl` 2026-10-08): `plex`, `planka`,
+  `pihole`... → `icon.png` (`image/png`); `jellyfin`, `nextcloud`, `immich`, `syncthing`... →
+  `icon.svg` (`image/svg+xml`). `BitmapFactory` can't decode SVG (returned `null` → fallback icon,
+  hence "some icons show, others don't"), so SVGs are rasterized with AndroidSVG
+  (`com.caverock:androidsvg-aar`, Apache 2.0, pure Java, no transitive deps — unlike Coil, no
+  Kotlin stdlib clash). Picked by `Content-Type`, falling back to the URL extension
+  (`isSvgIcon`, unit-tested). `renderSvg` forces the document's width/height to `100%`: without
+  that, a root `width="590"` (Immich's icon, which also has no `viewBox`) was drawn at 590 px
+  into the 40dp bitmap, leaving only an empty corner visible — checked on an emulator against the
+  5 real SVGs of a test server (Immich 0% → 63% of pixels drawn, OnlyOffice no longer cropped,
+  Jellyfin/Nextcloud/Nginx Proxy Manager still fine).
+- Icon fetches are bounded (the URL comes from the NAS, so it isn't trusted): body capped at 1 MiB
+  (`MAX_ICON_BYTES`, real icons ≤ ~80 KB), PNG/JPEG decoded subsampled to about the displayed
+  40dp (`iconSampleSize` — e.g. qBittorrent's 1024 px icon → 128 px, ~64 KB instead of ~4 MB),
+  SVG internal XML entities disabled app-wide (`TrueNasApplication.onCreate`). No
+  `SVGExternalFileResolver` is registered, so an SVG can't make AndroidSVG fetch anything else.
+  Security detail and what's still open: `SECURITY_TODO.md`, "App icons: SVG support + bounded
+  download/decode".
 
 ## Snag hit: Coil 3.6.0 incompatible with the project's Kotlin version
 
@@ -123,6 +141,8 @@ for a handful of small icons per screen.
   (not one after another) and each row reflects its own state.
 - [ ] Test an upgrade-failure case (e.g. a buggy app, or server unreachable during polling): check
   the error shows under the right row without blocking the other apps.
+- [x] Check on device that SVG icons (e.g. Jellyfin, Nextcloud, Immich) now render, sharp and
+  not cropped, alongside PNG ones — confirmed by the user on the emulator, 2026-10-08.
 - [ ] Check the rendering when an app has no icon (`metadata.icon` null): the fallback icon
   (`Icons.Filled.Apps`) should show up with no error.
 - [ ] If "Discover Apps" is ever built out: the `catalog/apps` payload (~800 KB, 5 trains) is
