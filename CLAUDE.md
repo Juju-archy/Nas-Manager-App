@@ -58,11 +58,15 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   WebSocket events on the TrueNAS side (`app.stats`/`container.metrics`), not over REST, and this
   app is REST-only. "Discover Apps" is only a placeholder for now (the `catalog.apps` catalog is
   ~800 KB). Full detail in `APPS_TODO.md`.
-- **System** (`SystemScreen.kt`): screen reachable from the drawer, three read-only sections loaded
+- **System** (`SystemScreen.kt`): screen reachable from the drawer, four sections loaded
   together on open + manual refresh (not polled) — General settings (`system.general`), Network
-  (`network.configuration` + `interface`) and Boot (`boot.get_state` + `boot.environment`, exposed
-  over REST under `/boot/environment/query`). No editing (timezone, network, activating a boot
-  environment) — display only. Full detail in `SYSTEM_TODO.md`.
+  (`network.configuration` + `interface`), Boot (`boot.get_state` + `boot.environment`, exposed
+  over REST under `/boot/environment/query`) and Services (`service.query`). The first three are
+  display only (no editing timezone, network, activating a boot environment). Services has
+  "Running"/"Start automatically" switches per service, applied only by a "Save modifications"
+  button pinned to the bottom of the screen (`service.start`/`stop`, synchronous, and
+  `PUT /service/id/{id}`); unsaved edits are dropped when leaving the screen. Full detail in
+  `SYSTEM_TODO.md`.
 
 ## Tracking files
 
@@ -86,7 +90,7 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   network/block-IO per app —, tests pending). Check before touching `AppsScreen.kt` or the
   `app.*`/`core.get_jobs` calls in `DashboardRepository.kt`.
 - `SYSTEM_TODO.md`: dedicated tracking for the System screen (`system.general`/
-  `network.configuration`/`interface`/`boot.get_state`/`boot.environment`, formats verified live via
+  `network.configuration`/`interface`/`boot.get_state`/`boot.environment`/`service.query`, formats verified live via
   `curl`, notably the `boot.environment` REST route pitfall and the fact that `system.general`
   embeds the GUI's TLS private key — never deserialized in the app). Check before touching
   `SystemScreen.kt` or those calls in `DashboardRepository.kt`.
