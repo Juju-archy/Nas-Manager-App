@@ -1,5 +1,6 @@
 package com.nasmanagerapp.ui.login
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,8 +54,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.nasmanagerapp.R
 import com.nasmanagerapp.TrueNasApplication
 import com.nasmanagerapp.data.network.TrueNasUrl
+import com.nasmanagerapp.ui.ProjectInfo
 import com.nasmanagerapp.ui.theme.NasManagerAppTheme
 
 /**
@@ -133,6 +137,13 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
+                // The launcher foreground bitmap (the adaptive ic_launcher itself can't be drawn by
+                // painterResource); it carries the icon's own tile plus the adaptive-icon safe-zone margin.
+                Image(
+                    painter = painterResource(R.mipmap.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier.size(120.dp),
+                )
                 Text(
                     text = "NasManager mobile",
                     style = MaterialTheme.typography.headlineMedium,
@@ -273,6 +284,10 @@ fun LoginScreen(
                         Text("Log in")
                     }
                 }
+
+                Spacer(Modifier.height(24.dp))
+
+                ProjectInfo()
             }
         }
     }
