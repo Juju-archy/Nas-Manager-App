@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.nasmanagerapp.ui.ProjectInfo
 
 /** Top-level destinations reachable from [AppDrawerContent], besides Alerts and Logout. */
 enum class DrawerDestination { DASHBOARD, STORAGE, REPORTING, APPS, SYSTEM }
@@ -154,5 +155,10 @@ fun AppDrawerContent(
             )
             Switch(checked = isDarkTheme, onCheckedChange = { onToggleTheme() })
         }
+        ProjectInfo(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+        )
     }
 }
