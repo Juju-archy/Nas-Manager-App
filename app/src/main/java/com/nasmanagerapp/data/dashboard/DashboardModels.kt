@@ -209,3 +209,27 @@ data class BootInfo(
     val lastScan: PoolScan?,
     val environments: List<BootEnvironmentInfo>,
 )
+
+/**
+ * One system service (SMB, NFS, SSH...), for the "Services" section of the drawer's "System"
+ * screen, from `service.query` (`GET /api/v2.0/service`) — see [DashboardRepository.getServices].
+ * [name] is the internal middleware name used by start/stop, [label] the name shown in the
+ * TrueNAS web UI (`cifs` → "SMB", `nvmet` → "NVMe-oF"...).
+ */
+data class ServiceInfo(
+    val id: Int,
+    val name: String,
+    val label: String,
+    val running: Boolean,
+    val startOnBoot: Boolean,
+)
+
+/**
+ * Pending, not-yet-saved edits to one service on the "System" screen — `null` means "unchanged".
+ * See [DashboardRepository.setServiceRunning]/[DashboardRepository.setServiceStartOnBoot].
+ */
+data class ServiceChange(
+    val service: ServiceInfo,
+    val running: Boolean? = null,
+    val startOnBoot: Boolean? = null,
+)

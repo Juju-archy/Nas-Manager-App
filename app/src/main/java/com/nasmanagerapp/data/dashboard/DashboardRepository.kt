@@ -6,6 +6,7 @@ import com.google.gson.annotations.SerializedName
 import java.io.IOException
 import java.time.OffsetDateTime
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -401,6 +402,49 @@ class DashboardRepository(
         }.toDashboardResult()
     }
 
+    /**
+     * System services for the "System" screen's "Services" section — curl-verified against a real
+     * server (TrueNAS 25.10, see `SYSTEM_TODO.md`): `GET /api/v2.0/service` returns every service
+     * in one call, with its run state and its "start automatically" flag.
+     */
+    suspend fun getServices(): Result<List<ServiceInfo>> = withContext(Dispatchers.IO) {
+        runCatching {
+            get("/api/v2.0/service", Array<ServiceDto>::class.java).toServiceInfos()
+        }.toDashboardResult()
+    }
+
+    /**
+     * Starts or stops one service — curl-verified against a real server (see `SYSTEM_TODO.md`):
+     * `POST /api/v2.0/service/start` or `/service/stop` with `{"service": "<name>"}` answers a plain
+     * `true`/`false` once the service has actually started/stopped (synchronous, no job to poll).
+     * TrueNAS waits up to 120s by default, hence [serviceControlClient] instead of the 15s default.
+     */
+    suspend fun setServiceRunning(name: String, running: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val path = if (running) "/api/v2.0/service/start" else "/api/v2.0/service/stop"
+            val requestBody = gson.toJson(ServiceControlRequest(name)).toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder().url(baseUrlProvider() + path).post(requestBody).build()
+            val succeeded = execute(request, Boolean::class.java, serviceControlClient)
+            if (!succeeded) {
+                throw DashboardApiException(if (running) "Couldn't be started." else "Couldn't be stopped.")
+            }
+        }.toDashboardResult()
+    }
+
+    /**
+     * Turns "start automatically" on/off for one service — curl-verified against a real server
+     * (see `SYSTEM_TODO.md`): `PUT /api/v2.0/service/id/{id}` with `{"enable": bool}`, answers the
+     * service id. Doesn't start/stop the service itself, see [setServiceRunning].
+     */
+    suspend fun setServiceStartOnBoot(id: Int, enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val requestBody = gson.toJson(ServiceUpdateRequest(enabled)).toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder().url(baseUrlProvider() + "/api/v2.0/service/id/$id").put(requestBody).build()
+            execute(request, Int::class.java)
+            Unit
+        }.toDashboardResult()
+    }
+
     private fun <T> get(path: String, type: Class<T>): T {
         val request = Request.Builder().url(baseUrlProvider() + path).get().build()
         return execute(request, type)
@@ -423,8 +467,8 @@ class DashboardRepository(
         }
     }
 
-    private fun <T> execute(request: Request, type: Class<T>): T {
-        okHttpClient.newCall(request).execute().use { response ->
+    private fun <T> execute(request: Request, type: Class<T>, client: OkHttpClient = okHttpClient): T {
+        client.newCall(request).execute().use { response ->
             val bodyString = response.body?.string()
             if (!response.isSuccessful) {
                 throw DashboardApiException("The server responded with an error (${response.code}).")
@@ -444,8 +488,15 @@ class DashboardRepository(
         }
     }
 
+    /** Same client (auth, connection pool), longer read timeout for start/stop — see [setServiceRunning]. */
+    private val serviceControlClient: OkHttpClient by lazy {
+        okHttpClient.newBuilder().readTimeout(SERVICE_CONTROL_TIMEOUT_SECONDS, TimeUnit.SECONDS).build()
+    }
+
     private companion object {
         const val LIVE_WINDOW_SECONDS = 10L
+        // TrueNAS's own start/stop timeout is 120s; leave it room to answer before giving up.
+        const val SERVICE_CONTROL_TIMEOUT_SECONDS = 130L
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
@@ -926,6 +977,42 @@ internal data class BootEnvironmentDto(
     val created: JsonElement?,
     @SerializedName("used_bytes") val usedBytes: Long,
 )
+
+internal data class ServiceControlRequest(val service: String)
+
+internal data class ServiceUpdateRequest(val enable: Boolean)
+
+internal data class ServiceDto(
+    val id: Int,
+    val service: String,
+    val enable: Boolean,
+    val state: String,
+)
+
+/**
+ * Internal middleware names → the labels shown in the TrueNAS web UI (System > Services). Only
+ * names that differ from a plain uppercase are listed; anything else (`ftp`, `nfs`, `ssh`...) is
+ * shown uppercased, so a service added by a future TrueNAS version still shows up readably.
+ */
+private val SERVICE_LABELS = mapOf(
+    "cifs" to "SMB",
+    "iscsitarget" to "iSCSI",
+    "nvmet" to "NVMe-oF",
+)
+
+internal fun serviceLabel(name: String): String = SERVICE_LABELS[name] ?: name.uppercase(Locale.ROOT)
+
+/** Maps `service.query` entries to [ServiceInfo], sorted by label like the TrueNAS web UI. */
+internal fun Array<ServiceDto>.toServiceInfos(): List<ServiceInfo> =
+    map { dto ->
+        ServiceInfo(
+            id = dto.id,
+            name = dto.service,
+            label = serviceLabel(dto.service),
+            running = dto.state == "RUNNING",
+            startOnBoot = dto.enable,
+        )
+    }.sortedBy { it.label.lowercase(Locale.ROOT) }
 
 internal data class NetdataSeriesDto(
     val name: String,

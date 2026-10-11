@@ -716,4 +716,36 @@ class DashboardRepositoryTest {
         assertEquals(0, job.progress?.percent)
         assertEquals("[ENOENT] None: App this-app-does-not-exist-zzz does not exist", job.error)
     }
+
+    @Test
+    fun `parses a real service query response into labelled services sorted like the web UI`() {
+        // Curl-verified against a live TrueNAS 25.10 server (see SYSTEM_TODO.md), pids trimmed.
+        val json = """
+            [
+              {"id": 4, "service": "cifs", "enable": true, "state": "RUNNING", "pids": [4933]},
+              {"id": 6, "service": "ftp", "enable": false, "state": "STOPPED", "pids": []},
+              {"id": 7, "service": "iscsitarget", "enable": false, "state": "STOPPED", "pids": []},
+              {"id": 9, "service": "nfs", "enable": false, "state": "STOPPED", "pids": []},
+              {"id": 10, "service": "snmp", "enable": false, "state": "STOPPED", "pids": []},
+              {"id": 11, "service": "ssh", "enable": false, "state": "STOPPED", "pids": []},
+              {"id": 14, "service": "ups", "enable": false, "state": "STOPPED", "pids": []},
+              {"id": 27, "service": "nvmet", "enable": false, "state": "STOPPED", "pids": []}
+            ]
+        """.trimIndent()
+
+        val services = Gson().fromJson(json, Array<ServiceDto>::class.java).toServiceInfos()
+
+        assertEquals(
+            listOf("FTP", "iSCSI", "NFS", "NVMe-oF", "SMB", "SNMP", "SSH", "UPS"),
+            services.map { it.label },
+        )
+        val smb = services.single { it.label == "SMB" }
+        assertEquals(ServiceInfo(id = 4, name = "cifs", label = "SMB", running = true, startOnBoot = true), smb)
+        assertEquals(1, services.count { it.running })
+    }
+
+    @Test
+    fun `shows an unknown service name uppercased`() {
+        assertEquals("WEBDAV", serviceLabel("webdav"))
+    }
 }

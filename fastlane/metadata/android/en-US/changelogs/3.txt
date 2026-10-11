@@ -1,0 +1,2 @@
+New:
+• System screen: new Services section (SMB, NFS, SSH, FTP, iSCSI, NVMe-oF, SNMP, UPS) with Running and Start auto switches, applied with a "Save modifications" button

@@ -1,0 +1,2 @@
+Nouveautés :
+• Écran Système : nouvelle section Services (SMB, NFS, SSH, FTP, iSCSI, NVMe-oF, SNMP, UPS) avec interrupteurs Running et Start auto, appliqués via le bouton « Save modifications »

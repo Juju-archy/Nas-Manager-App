@@ -17,10 +17,13 @@ import com.nasmanagerapp.data.dashboard.NetworkInfo
 import com.nasmanagerapp.data.dashboard.PoolDetail
 import com.nasmanagerapp.data.dashboard.PoolDiskInfo
 import com.nasmanagerapp.data.dashboard.PoolSummary
+import com.nasmanagerapp.data.dashboard.ServiceChange
+import com.nasmanagerapp.data.dashboard.ServiceInfo
 import com.nasmanagerapp.data.dashboard.SystemGeneralSettings
 import com.nasmanagerapp.data.dashboard.SystemInfo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,6 +73,11 @@ data class DashboardUiState(
     val bootInfo: BootInfo? = null,
     val isLoadingBootInfo: Boolean = false,
     val bootInfoError: String? = null,
+    val services: List<ServiceInfo>? = null,
+    val isLoadingServices: Boolean = false,
+    val servicesError: String? = null,
+    val isSavingServices: Boolean = false,
+    val serviceSaveErrors: List<String> = emptyList(),
 )
 
 /**
@@ -270,7 +278,7 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
 
     /**
      * Loaded on demand when the drawer's "System" screen is opened, and again on manual refresh —
-     * not polled. The three sections (General settings/Network/Boot) come from independent API
+     * not polled. The four sections (General settings/Network/Boot/Services) come from independent API
      * calls, fetched concurrently and tracked with their own loading/error state so one failing
      * doesn't hide the others.
      */
@@ -283,12 +291,16 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
                 networkInfoError = null,
                 isLoadingBootInfo = true,
                 bootInfoError = null,
+                isLoadingServices = true,
+                servicesError = null,
+                serviceSaveErrors = emptyList(),
             )
         }
         viewModelScope.launch {
             val generalDeferred = async { repository.getSystemGeneral() }
             val networkDeferred = async { repository.getNetworkInfo() }
             val bootDeferred = async { repository.getBootInfo() }
+            val servicesDeferred = async { repository.getServices() }
 
             generalDeferred.await()
                 .onSuccess { general -> _uiState.update { it.copy(systemGeneral = general, isLoadingSystemGeneral = false) } }
@@ -301,6 +313,40 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
             bootDeferred.await()
                 .onSuccess { boot -> _uiState.update { it.copy(bootInfo = boot, isLoadingBootInfo = false) } }
                 .onFailure { error -> _uiState.update { it.copy(isLoadingBootInfo = false, bootInfoError = error.message) } }
+
+            servicesDeferred.await()
+                .onSuccess { services -> _uiState.update { it.copy(services = services, isLoadingServices = false) } }
+                .onFailure { error -> _uiState.update { it.copy(isLoadingServices = false, servicesError = error.message) } }
+        }
+    }
+
+    /**
+     * Applies the System screen's pending service edits (only sent on "Save modifications", see
+     * `SystemScreen.kt`) — services in parallel, and per service "start automatically" before
+     * start/stop. Then reloads the list so the toggles show the server's real state, whatever
+     * succeeded; failures are reported per service in [DashboardUiState.serviceSaveErrors].
+     */
+    fun saveServiceChanges(changes: List<ServiceChange>) {
+        if (changes.isEmpty() || _uiState.value.isSavingServices) return
+        _uiState.update { it.copy(isSavingServices = true, serviceSaveErrors = emptyList()) }
+        viewModelScope.launch {
+            val errors = changes.map { change ->
+                async {
+                    runCatching {
+                        change.startOnBoot?.let { repository.setServiceStartOnBoot(change.service.id, it).getOrThrow() }
+                        change.running?.let { repository.setServiceRunning(change.service.name, it).getOrThrow() }
+                    }.exceptionOrNull()?.let { "${change.service.label}: ${it.message ?: "Unknown error."}" }
+                }
+            }.awaitAll().filterNotNull()
+
+            val reloaded = repository.getServices()
+            _uiState.update {
+                it.copy(
+                    services = reloaded.getOrNull() ?: it.services,
+                    isSavingServices = false,
+                    serviceSaveErrors = errors + listOfNotNull(reloaded.exceptionOrNull()?.message),
+                )
+            }
         }
     }
 

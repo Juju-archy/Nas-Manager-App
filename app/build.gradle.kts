@@ -13,8 +13,8 @@ android {
         applicationId = "app.nasmanager"
         minSdk = 35
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

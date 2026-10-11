@@ -183,6 +183,7 @@ fun DashboardRoute(
                 SystemRoute(
                     uiState = uiState,
                     onLoadSystemSettings = viewModel::loadSystemSettings,
+                    onSaveServiceChanges = viewModel::saveServiceChanges,
                     onBack = { showSystem = false },
                 )
             }
