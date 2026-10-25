@@ -22,14 +22,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -49,6 +53,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.caverock.androidsvg.RenderOptions
@@ -65,7 +71,8 @@ import okio.BufferedSource
  * Apps screen, reachable from the drawer's "Apps" entry — lists installed apps
  * ([DashboardViewModel.loadApps]/[DashboardRepository.getApps]), with a per-app "Update"
  * action and a bulk "Update All" button (both go through [DashboardViewModel.upgradeApp], a real
- * middleware job polled to completion — see `APPS_TODO.md`). No CPU/Block I/O/Network columns:
+ * middleware job polled to completion — see `APPS_TODO.md`), plus a per-app status dot and Start/Stop button
+ * ([DashboardViewModel.setAppRunning], same job mechanism). No CPU/Block I/O/Network columns:
  * those only exist as WebSocket subscription events server-side (curl-verified, see
  * `APPS_TODO.md`), and this app is REST-only.
  *
@@ -79,6 +86,7 @@ fun AppsRoute(
     onLoadApps: () -> Unit,
     onUpgradeApp: (String) -> Unit,
     onUpgradeAll: () -> Unit,
+    onSetAppRunning: (String, Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -93,10 +101,12 @@ fun AppsRoute(
             isLoading = uiState.isLoadingApps,
             error = uiState.appsError,
             updatingAppIds = uiState.updatingAppIds,
-            appUpdateErrors = uiState.appUpdateErrors,
+            switchingAppIds = uiState.switchingAppIds,
+            appActionErrors = uiState.appActionErrors,
             onRefresh = onLoadApps,
             onUpgradeApp = onUpgradeApp,
             onUpgradeAll = onUpgradeAll,
+            onSetAppRunning = onSetAppRunning,
             onOpenDiscover = { showDiscover = true },
             onBack = onBack,
             modifier = modifier,
@@ -111,16 +121,36 @@ fun AppsScreen(
     isLoading: Boolean,
     error: String?,
     updatingAppIds: Set<String>,
-    appUpdateErrors: Map<String, String>,
+    switchingAppIds: Set<String>,
+    appActionErrors: Map<String, String>,
     onRefresh: () -> Unit,
     onUpgradeApp: (String) -> Unit,
     onUpgradeAll: () -> Unit,
+    onSetAppRunning: (String, Boolean) -> Unit,
     onOpenDiscover: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val outdatedCount = apps.count { it.upgradeAvailable }
     var showConfirmUpdateAll by remember { mutableStateOf(false) }
+    var appToStop by remember { mutableStateOf<AppInfo?>(null) }
+
+    appToStop?.let { app ->
+        AlertDialog(
+            onDismissRequest = { appToStop = null },
+            title = { Text("Stop ${app.title}?") },
+            text = { Text("The app will be unavailable until it's started again.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    appToStop = null
+                    onSetAppRunning(app.id, false)
+                }) { Text("Stop") }
+            },
+            dismissButton = {
+                TextButton(onClick = { appToStop = null }) { Text("Cancel") }
+            },
+        )
+    }
 
     if (showConfirmUpdateAll) {
         AlertDialog(
@@ -187,8 +217,10 @@ fun AppsScreen(
                             AppRow(
                                 app = app,
                                 isUpdating = app.id in updatingAppIds,
-                                updateError = appUpdateErrors[app.id],
+                                isSwitching = app.id in switchingAppIds,
+                                actionError = appActionErrors[app.id],
                                 onUpgrade = { onUpgradeApp(app.id) },
+                                onSetRunning = { start -> if (start) onSetAppRunning(app.id, true) else appToStop = app },
                             )
                         }
                     }
@@ -220,7 +252,7 @@ private fun AppsTableHeader() {
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(0.6f),
+            modifier = Modifier.weight(0.9f),
         )
         Text(
             "Updates",
@@ -233,7 +265,14 @@ private fun AppsTableHeader() {
 }
 
 @Composable
-private fun AppRow(app: AppInfo, isUpdating: Boolean, updateError: String?, onUpgrade: () -> Unit) {
+private fun AppRow(
+    app: AppInfo,
+    isUpdating: Boolean,
+    isSwitching: Boolean,
+    actionError: String?,
+    onUpgrade: () -> Unit,
+    onSetRunning: (Boolean) -> Unit,
+) {
     Column {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -248,36 +287,83 @@ private fun AppRow(app: AppInfo, isUpdating: Boolean, updateError: String?, onUp
                     )
                 }
             }
-            Box(modifier = Modifier.weight(0.6f)) { AppStateChip(app.state) }
+            Row(modifier = Modifier.weight(0.9f), verticalAlignment = Alignment.CenterVertically) {
+                AppStateDot(app.state)
+                Spacer(Modifier.width(10.dp))
+                AppRunToggle(
+                    state = app.state,
+                    isSwitching = isSwitching,
+                    enabled = !isUpdating,
+                    onSetRunning = onSetRunning,
+                )
+            }
             Box(modifier = Modifier.weight(0.7f)) {
                 when {
                     isUpdating -> CircularProgressIndicator(modifier = Modifier.height(20.dp).width(20.dp), strokeWidth = 2.dp)
-                    app.upgradeAvailable -> OutlinedButton(onClick = onUpgrade) { Text("Update") }
+                    app.upgradeAvailable -> OutlinedButton(onClick = onUpgrade, enabled = !isSwitching) { Text("Update") }
                     else -> Text("Up to date", style = MaterialTheme.typography.bodyMedium, color = HealthyColor)
                 }
             }
         }
-        if (updateError != null) {
+        if (actionError != null) {
             Spacer(Modifier.height(4.dp))
-            Text(updateError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(actionError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
     }
 }
 
+/**
+ * "■"/"▶" button next to the status dot — mirrors the TrueNAS web
+ * UI: Stop for a running or deploying app, Start for a stopped or crashed one, nothing while it's
+ * already stopping (or unknown). Stopping goes through a confirmation dialog in [AppsScreen],
+ * starting doesn't (harmless). Deliberately a different shape from the "Update" button next to
+ * it (tinted square vs. an outlined pill), so the two don't get mixed up when tapping.
+ */
 @Composable
-private fun AppStateChip(state: AppState) {
-    val (color, label) = when (state) {
-        AppState.RUNNING -> HealthyColor to "Running"
-        AppState.STOPPED -> MaterialTheme.colorScheme.onSurfaceVariant to "Stopped"
-        AppState.DEPLOYING -> ServicesColor to "Deploying"
-        AppState.STOPPING -> ZfsCacheColor to "Stopping..."
-        AppState.CRASHED -> MaterialTheme.colorScheme.error to "Crashed"
-        AppState.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant to "Unknown"
+private fun AppRunToggle(state: AppState, isSwitching: Boolean, enabled: Boolean, onSetRunning: (Boolean) -> Unit) {
+    val start = canStartApp(state)
+    when {
+        isSwitching -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+        start || canStopApp(state) -> {
+            val tint = if (start) HealthyColor else MaterialTheme.colorScheme.error
+            FilledTonalIconButton(
+                onClick = { onSetRunning(start) },
+                enabled = enabled,
+                shape = RoundedCornerShape(8.dp),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = tint.copy(alpha = 0.15f),
+                    contentColor = tint,
+                ),
+            ) {
+                Icon(
+                    if (start) Icons.Filled.PlayArrow else Icons.Filled.Stop,
+                    contentDescription = if (start) "Start app" else "Stop app",
+                )
+            }
+        }
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+}
+
+internal fun canStartApp(state: AppState): Boolean = state == AppState.STOPPED || state == AppState.CRASHED
+
+internal fun canStopApp(state: AppState): Boolean = state == AppState.RUNNING || state == AppState.DEPLOYING
+
+/**
+ * Green dot when running, red otherwise — the text label was dropped since the Start/Stop button
+ * already says which way the app is; the full state stays available to screen readers.
+ */
+@Composable
+private fun AppStateDot(state: AppState) {
+    val label = when (state) {
+        AppState.RUNNING -> "Running"
+        AppState.STOPPED -> "Stopped"
+        AppState.DEPLOYING -> "Deploying"
+        AppState.STOPPING -> "Stopping"
+        AppState.CRASHED -> "Crashed"
+        AppState.UNKNOWN -> "Unknown state"
+    }
+    Box(modifier = Modifier.semantics { contentDescription = label }) {
         StatusDot(healthy = state == AppState.RUNNING)
-        Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = if (state == AppState.CRASHED) color else MaterialTheme.colorScheme.onSurface)
     }
 }
 

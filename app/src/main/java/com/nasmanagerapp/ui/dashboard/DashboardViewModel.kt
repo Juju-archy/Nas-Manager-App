@@ -63,7 +63,8 @@ data class DashboardUiState(
     val isLoadingApps: Boolean = false,
     val appsError: String? = null,
     val updatingAppIds: Set<String> = emptySet(),
-    val appUpdateErrors: Map<String, String> = emptyMap(),
+    val switchingAppIds: Set<String> = emptySet(),
+    val appActionErrors: Map<String, String> = emptyMap(),
     val systemGeneral: SystemGeneralSettings? = null,
     val isLoadingSystemGeneral: Boolean = false,
     val systemGeneralError: String? = null,
@@ -256,8 +257,8 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
      * on success rather than patching just that entry (version/state/upgrade_available all change).
      */
     fun upgradeApp(id: String) {
-        if (id in _uiState.value.updatingAppIds) return
-        _uiState.update { it.copy(updatingAppIds = it.updatingAppIds + id, appUpdateErrors = it.appUpdateErrors - id) }
+        if (id in _uiState.value.updatingAppIds || id in _uiState.value.switchingAppIds) return
+        _uiState.update { it.copy(updatingAppIds = it.updatingAppIds + id, appActionErrors = it.appActionErrors - id) }
         viewModelScope.launch {
             repository.upgradeApp(id)
                 .mapCatching { jobId -> awaitJobCompletion(jobId) }
@@ -269,7 +270,32 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
                     _uiState.update {
                         it.copy(
                             updatingAppIds = it.updatingAppIds - id,
-                            appUpdateErrors = it.appUpdateErrors + (id to (error.message ?: "Unknown error.")),
+                            appActionErrors = it.appActionErrors + (id to (error.message ?: "Unknown error.")),
+                        )
+                    }
+                }
+        }
+    }
+
+    /**
+     * Starts ([start] = true) or stops one app — same job + polling flow as [upgradeApp] (see
+     * `DashboardRepository.startApp`), then re-fetches [DashboardUiState.apps] for the new state.
+     */
+    fun setAppRunning(id: String, start: Boolean) {
+        if (id in _uiState.value.updatingAppIds || id in _uiState.value.switchingAppIds) return
+        _uiState.update { it.copy(switchingAppIds = it.switchingAppIds + id, appActionErrors = it.appActionErrors - id) }
+        viewModelScope.launch {
+            (if (start) repository.startApp(id) else repository.stopApp(id))
+                .mapCatching { jobId -> awaitJobCompletion(jobId) }
+                .onSuccess {
+                    _uiState.update { it.copy(switchingAppIds = it.switchingAppIds - id) }
+                    loadApps()
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            switchingAppIds = it.switchingAppIds - id,
+                            appActionErrors = it.appActionErrors + (id to (error.message ?: "Unknown error.")),
                         )
                     }
                 }

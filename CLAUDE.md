@@ -54,7 +54,8 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
 - **Apps** (`AppsScreen.kt`): screen reachable from the drawer, lists `app.query` (loaded on open,
   not polled) with an "Update" button per app (`app.upgrade`, a middleware job polled via
   `core.get_jobs` to completion) and "Update All" (same mechanism run in parallel across every app
-  with an update available). No CPU/Memory/Network/Block I/O per app — these metrics only exist as
+  with an update available), plus a per-app status dot + Start/Stop button (`app.start`/`app.stop`, same
+  job mechanism; tinted square icon so it isn't mistaken for "Update", Stop confirmed by a dialog). No CPU/Memory/Network/Block I/O per app — these metrics only exist as
   WebSocket events on the TrueNAS side (`app.stats`/`container.metrics`), not over REST, and this
   app is REST-only. "Discover Apps" is only a placeholder for now (the `catalog.apps` catalog is
   ~800 KB). Full detail in `APPS_TODO.md`.

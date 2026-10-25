@@ -175,6 +175,7 @@ fun DashboardRoute(
                     onLoadApps = viewModel::loadApps,
                     onUpgradeApp = viewModel::upgradeApp,
                     onUpgradeAll = viewModel::upgradeAllOutdatedApps,
+                    onSetAppRunning = viewModel::setAppRunning,
                     onBack = { showApps = false },
                 )
             }

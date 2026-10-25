@@ -81,6 +81,18 @@ triggering a real update during verification. The format was confirmed without t
 - `GET /core/get_jobs?id=<id>` returns an **array** (not a single object) even when filtered to a
   single id — `DashboardRepository.getJobStatus` takes `firstOrNull()`.
 
+### Start/Stop — `POST /api/v2.0/app/start` / `app/stop` (jobs) — confirmed working on device 2026-10-25
+
+From the `api.truenas.com` docs (v25.10, checked 2026-10-25): `app.start` and `app.stop` are both
+**jobs**, a single positional `app_name` (string), return `null`, role `APPS_WRITE`.
+
+- Body sent as a **bare JSON string** (`"<id>"`), by analogy with `alert/dismiss` (the other
+  single-parameter method, where an object 422s) — unlike `app/upgrade` (two parameters → kwargs
+  object). Confirmed by the user starting/stopping real apps from the app against their server
+  (2026-10-25) — not separately captured with `curl`, so no archived raw payload.
+- Response assumed to be the raw job id (like `app/upgrade`), polled with the same
+  `awaitJobCompletion`, then the list is re-fetched.
+
 ## Decisions made
 
 - No CPU/Block I/O/Network in the table (see above) — an explicit user choice made after seeing the
@@ -143,6 +155,16 @@ for a handful of small icons per screen.
   the error shows under the right row without blocking the other apps.
 - [x] Check on device that SVG icons (e.g. Jellyfin, Nextcloud, Immich) now render, sharp and
   not cropped, alongside PNG ones — confirmed by the user on the emulator, 2026-10-08.
+- [x] Start/Stop works against a real server — confirmed by the user on device, 2026-10-25.
+- [x] Start/Stop vs "Update" mis-taps (user feedback 2026-10-25): status text label dropped, the
+  Status column is now a green/red dot + a tinted square "■"/"▶" icon button (no text label),
+  a different shape from the outlined-pill "Update". Stop asks for confirmation first
+  ("Stop <app>?" dialog); Start doesn't. The full state
+  (Deploying/Stopping/Crashed...) is only exposed to screen readers now. Check on device that it
+  fits on a narrow phone and that mis-taps are gone.
+- [ ] Test Start/Stop edge cases on device: Stop on a running app → spinner, then "Stopped" + Start icon;
+  Start → back to "Running" (possibly via "Deploying"); Update disabled meanwhile; a failure shows
+  under the row. Check the Status column (chip + icon) still fits on a narrow phone.
 - [ ] Check the rendering when an app has no icon (`metadata.icon` null): the fallback icon
   (`Icons.Filled.Apps`) should show up with no error.
 - [ ] If "Discover Apps" is ever built out: the `catalog/apps` payload (~800 KB, 5 trains) is

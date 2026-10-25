@@ -291,6 +291,22 @@ class DashboardRepository(
     }
 
     /**
+     * Starts a stopped app, returning its middleware job id to poll via [getJobStatus]. Per the
+     * `api.truenas.com` docs (v25.10), `app.start` is a job taking a single positional
+     * `app_name` — confirmed working on a real server, see `APPS_TODO.md`. The body is sent as a bare JSON
+     * string, like [dismissAlert] (the other single-parameter method, where an object 422s), not an
+     * object like [upgradeApp] (two parameters).
+     */
+    suspend fun startApp(appId: String): Result<Long> = withContext(Dispatchers.IO) {
+        runCatching { post("/api/v2.0/app/start", appId, Long::class.java) }.toDashboardResult()
+    }
+
+    /** Stops a running app — same shape and same caveat as [startApp] (`app.stop`, also a job). */
+    suspend fun stopApp(appId: String): Result<Long> = withContext(Dispatchers.IO) {
+        runCatching { post("/api/v2.0/app/stop", appId, Long::class.java) }.toDashboardResult()
+    }
+
+    /**
      * Polls one middleware job's status — curl-verified against a real server (see
      * `APPS_TODO.md`): `GET /api/v2.0/core/get_jobs?id=<id>` returns an array (filtered to that one
      * job), not a single object.
