@@ -31,7 +31,7 @@ credentials with a GET `/api/v2.0/system/info` before storing them in the store.
 
 ## "Stay logged in" is unavailable over HTTP
 
-The password persisted by "Stay logged in" (`SessionPreferences`, `EncryptedSharedPreferences`) is
+The password persisted by "Stay logged in" (`SessionPreferences`, AES-GCM with an Android Keystore key) is
 already encrypted at rest, so storage itself was never the risk here. The risk is what happens
 *after* storage: if the saved server address is `http://`, every app start restores the password
 into `CredentialsStore` and resumes the dashboard's 2s poll, which sends `Authorization: Basic
@@ -120,9 +120,12 @@ screen.
   for an old session saved while on `https://` — confirm that logging in again against `http://`
   doesn't leave a stale password+`isLoggedIn=true` restorable on next launch (covered at the unit
   level by `TrueNasUrlTest`/`TrueNasApplicationTest`, not yet exercised in the running app).
-- [ ] Test on a real Android device (not just an emulator), particularly for
-  EncryptedSharedPreferences (depends on the hardware Keystore, may behave differently on an
-  emulator).
+- [x] Keystore-backed `SessionPreferences` (2026-10-26 rewrite) on the user's device: login over
+  `https://` with "Stay logged in" checked, then the session is restored on the next launch —
+  confirmed working by the user on 2026-10-26, on the 1.2.1 build (fresh install, not an upgrade).
+- [ ] Upgrade path from 1.2.0 (the `EncryptedSharedPreferences` format): install 1.2.0, check "Stay
+  logged in", then install the new version over it without uninstalling — the old session must be
+  dropped cleanly (login screen shown once, no crash), then restored normally on later launches.
 - [ ] Dashboard: real-conditions test on device/emulator (2s polling for CPU/Memory/Pools,
   behavior in the background / with the screen locked, CPU core grid rendering).
 
@@ -144,11 +147,18 @@ screen.
   `system.info`/`pool.query`/`reporting.*`/`alert.*` — plus `app.upgrade` only if "Update" is
   used) rather than using the main admin account there, precisely because this password travels in
   the clear if the user picks the HTTP option.
-- Credentials are stored via `EncryptedSharedPreferences` (androidx.security-crypto 1.1.0) — the
-  API is deprecated on Google's side (compile-time warnings) in favor of Jetpack DataStore + manual
-  encryption (Tink), but remains functional and supported. Worth watching in case Google drops
-  support later; not urgent today.
-- `truenas_session.xml` is excluded from cloud backup and device-to-device transfer
+- Credentials are encrypted directly with the Android Keystore (`SessionPreferences`: AES-256-GCM,
+  non-extractable key under alias `nasmanager_session_key`, preference name bound as GCM associated
+  data), stored as Base64 in a plain `truenas_session_v2.xml`. **Replaced** (2026-10-26)
+  `EncryptedSharedPreferences` from androidx.security-crypto 1.1.0: deprecated by Google, no longer
+  updated, and pinning a transitive Tink 1.8.0 (latest 1.24.0) plus its R8 `-keep` rule — a whole
+  crypto library for 3 strings. Using Tink directly was considered and rejected for the same
+  reason: no dependency is needed for this. No migration from the old format (it would have meant
+  keeping security-crypto one more release): the old `truenas_session.xml` and its
+  `_androidx_security_master_key_` Keystore entry are deleted on startup, so users who had "Stay
+  logged in" checked log in once more after updating. If the Keystore key is ever lost while the
+  file survives, the whole session is cleared rather than restored with an empty password.
+- `truenas_session_v2.xml` is excluded from cloud backup and device-to-device transfer
   (`data_extraction_rules.xml`, `backup_rules.xml`) because the Keystore master key doesn't migrate
   between devices — a restore would have made the file unreadable. If a future SharedPreferences
   file is added to store another secret, remember to exclude it too.

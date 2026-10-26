@@ -6,6 +6,6 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!-- See data_extraction_rules.xml for why truenas_session is excluded. -->
-    <exclude domain="sharedpref" path="truenas_session.xml" />
+    <!-- See data_extraction_rules.xml for why truenas_session_v2 is excluded. -->
+    <exclude domain="sharedpref" path="truenas_session_v2.xml" />
 </full-backup-content>

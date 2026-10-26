@@ -25,7 +25,7 @@ graph TB
     FeatureScreens --> DashRepo["DashboardRepository"]
 
     AuthRepo --> CredStore["CredentialsStore<br/>(in-memory)"]
-    AuthRepo -->|"if 'stay logged in'"| SessionPrefs["SessionPreferences<br/>(EncryptedSharedPreferences)"]
+    AuthRepo -->|"if 'stay logged in'"| SessionPrefs["SessionPreferences<br/>(AES-GCM, no crypto library)"]
     AuthRepo --> OkHttp["Shared OkHttpClient"]
     DashRepo --> OkHttp
 

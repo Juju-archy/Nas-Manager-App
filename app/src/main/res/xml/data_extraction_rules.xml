@@ -5,15 +5,15 @@
 -->
 <data-extraction-rules>
     <!--
-        truenas_session holds the TrueNAS API key via EncryptedSharedPreferences, whose master
-        key lives in the Android Keystore and never leaves the device. A backed-up copy would be
-        undecryptable after a restore (new device, or even a factory reset) and could crash the
-        app on next read, so it's excluded from both backup paths rather than restored broken.
+        truenas_session_v2 holds the TrueNAS credentials encrypted with an AES key that lives in
+        the Android Keystore and never leaves the device (SessionPreferences). A backed-up copy
+        would be undecryptable after a restore (new device, or even a factory reset), so it's
+        excluded from both backup paths rather than restored broken.
     -->
     <cloud-backup>
-        <exclude domain="sharedpref" path="truenas_session.xml" />
+        <exclude domain="sharedpref" path="truenas_session_v2.xml" />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="sharedpref" path="truenas_session.xml" />
+        <exclude domain="sharedpref" path="truenas_session_v2.xml" />
     </device-transfer>
 </data-extraction-rules>

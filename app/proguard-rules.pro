@@ -4,9 +4,3 @@
 # otherwise R8 renaming silently breaks (de)serialization instead of crashing.
 -keep class com.nasmanagerapp.data.dashboard.*Dto { *; }
 -keep class com.nasmanagerapp.data.dashboard.*Request { *; }
-
-# EncryptedSharedPreferences (SessionPreferences) is backed by Tink, which resolves some of its
-# crypto primitives by class name at runtime — shrinking/renaming those classes is a known cause of
-# crashes on first launch.
--keep class com.google.crypto.tink.** { *; }
--dontwarn com.google.crypto.tink.**

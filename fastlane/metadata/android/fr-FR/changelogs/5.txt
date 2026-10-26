@@ -1,0 +1,3 @@
+Sécurité :
+• Identifiants enregistrés (« Stay logged in ») désormais chiffrés directement par le Keystore Android, avec une bibliothèque tierce en moins. Si « Stay logged in » était coché, une reconnexion sera nécessaire une fois après cette mise à jour
+• Icônes des apps téléchargées uniquement en HTTPS

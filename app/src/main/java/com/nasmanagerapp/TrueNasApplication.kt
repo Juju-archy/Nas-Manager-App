@@ -23,8 +23,12 @@ class TrueNasApplication : Application() {
      * Plain client (no Basic Auth interceptor) for external, unauthenticated resources — currently
      * just the app catalog's icon URLs (`https://media.sys.truenas.net/...`, see `APPS_TODO.md`),
      * which aren't served by the user's own TrueNAS and shouldn't receive its credentials.
+     * Icons are only requested over HTTPS (`httpsIconUrl`), so redirects that switch scheme are
+     * refused — OkHttp would otherwise follow an `https://` → `http://` redirect by default.
      */
-    val imageOkHttpClient: OkHttpClient by lazy { OkHttpClient() }
+    val imageOkHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder().followSslRedirects(false).build()
+    }
 
     val sessionPreferences: SessionPreferences by lazy {
         SessionPreferences(this)

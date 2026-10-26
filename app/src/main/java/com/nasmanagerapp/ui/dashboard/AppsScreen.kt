@@ -64,6 +64,7 @@ import com.nasmanagerapp.data.dashboard.AppInfo
 import com.nasmanagerapp.data.dashboard.AppState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okio.BufferedSource
 
@@ -415,7 +416,7 @@ private fun AppIcon(url: String?) {
  */
 private suspend fun fetchIconBitmap(app: TrueNasApplication, url: String, sizePx: Int): ImageBitmap? = withContext(Dispatchers.IO) {
     runCatching {
-        val request = Request.Builder().url(url).get().build()
+        val request = Request.Builder().url(httpsIconUrl(url) ?: return@runCatching null).get().build()
         app.imageOkHttpClient.newCall(request).execute().use { response ->
             val bytes = if (response.isSuccessful) response.body?.source()?.let { readAtMost(it, MAX_ICON_BYTES) } else null
             bytes?.let {
@@ -427,6 +428,18 @@ private suspend fun fetchIconBitmap(app: TrueNasApplication, url: String, sizePx
             }
         }
     }.getOrNull()
+}
+
+/**
+ * Icons are only ever fetched over HTTPS, so one can't be swapped on the wire even when the NAS
+ * itself is reached over `http://`: an `http://` URL is upgraded to `https://` (the catalog CDN
+ * serves both; a host that doesn't just falls back to the default icon), any other scheme or
+ * malformed URL is refused (`null`). Redirects back to `http://` are blocked on
+ * [TrueNasApplication.imageOkHttpClient] itself.
+ */
+internal fun httpsIconUrl(url: String): String? {
+    val parsed = url.toHttpUrlOrNull() ?: return null
+    return if (parsed.isHttps) url else parsed.newBuilder().scheme("https").build().toString()
 }
 
 /** Real catalog icons are ≤ ~80 KB (checked on the CDN 2026-10-08) — 1 MiB leaves ample margin. */

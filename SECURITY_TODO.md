@@ -2,7 +2,7 @@
 
 Context: dedicated tracking for the app's security testing (static and dynamic), started on
 2026-08-29. Auth/HTTP-specific points (Basic Auth, cleartext-HTTP consent,
-`EncryptedSharedPreferences`...) stay documented in `CONNECTIVITY_TODO.md` — this file doesn't
+credential storage in `SessionPreferences`...) stay documented in `CONNECTIVITY_TODO.md` — this file doesn't
 duplicate them, it points there and covers the rest (TLS, build/distribution, dependencies).
 
 ## Static checks done (2026-08-29)
@@ -16,7 +16,7 @@ Quick searches (`grep`) over `app/src/main/java/`:
   certificate verification.
 - ✅ No real secret hardcoded — only placeholders in Compose `@Preview`s
   (`LoginScreen.kt`, `DashboardScreen.kt`: fake IP/password for the Android Studio preview).
-- ✅ `truenas_session.xml` (credentials via `EncryptedSharedPreferences`) properly excluded from
+- ✅ `truenas_session_v2.xml` (credentials encrypted with an Android Keystore key) properly excluded from
   cloud backup and device transfer (`backup_rules.xml`, `data_extraction_rules.xml`).
 - ✅ The TrueNAS API key shared in chat on 2026-08-29 (reused across several sessions the same
   day: reporting diagnosis, then verifying the `alert.*` and `app.*` formats before
@@ -41,6 +41,10 @@ still active on it):
   (`AES256_SIV` on the keys) — confirmed no secret appears in the clear even with direct access to
   the app's sandbox (this test was possible here because this debug build is `run-as`-able; on a
   non-debuggable release build, this would require a rooted device, see axis 2).
+  **Superseded 2026-10-26**: that file no longer exists (see "Credential storage rewrite" below).
+  The new `truenas_session_v2.xml` encrypts the values only — the field names (`server_url`,
+  `username`, `password`, `logged_in`) and the `logged_in` boolean are now readable in the clear.
+  Nothing secret is exposed, but this `run-as` check hasn't been redone on the new format yet.
 - ✅ **Logs (axis 2)**: full `adb logcat -d`, filtered on the package name then on
   `password|authorization|basic|token|credential` → no match related to the app (only unrelated
   system WindowManager noise). Dynamically confirms the static grep already done on the code. No
@@ -238,7 +242,7 @@ dedicated leak review (the point that hadn't been covered as its own axis before
 - ✅ **New `ThemePreferences`** (`data/theme/ThemePreferences.kt`): plain `SharedPreferences`
   (not `EncryptedSharedPreferences`), correctly so — it only ever stores the `ThemeMode` enum name
   (`SYSTEM`/`LIGHT`/`DARK`), nothing sensitive. Not added to `backup_rules.xml`/
-  `data_extraction_rules.xml`'s exclusions, which is correct here (unlike `truenas_session.xml`,
+  `data_extraction_rules.xml`'s exclusions, which is correct here (unlike the session file,
   restoring this one on a new device is harmless and actually the expected UX).
 - ✅ **Coroutine/resource leak review** (not done as its own axis before): every `.launch` in
   `DashboardViewModel` runs in `viewModelScope` (auto-cancelled on `onCleared`), no `GlobalScope`
@@ -250,7 +254,9 @@ dedicated leak review (the point that hadn't been covered as its own axis before
   the whole app (the `FLAG_SECURE` one above), and it correctly cleans up in `onDispose`. No
   `registerReceiver`/manual listener registration anywhere to forget to unregister — the app is
   pure Compose + `viewModelScope`, no manually-managed lifecycle objects.
-- ℹ️ **Noted, not actionable**: `androidx.security:security-crypto` 1.1.0 (`SessionPreferences.kt`)
+- ✅ **Resolved 2026-10-26** — `security-crypto` removed, replaced by the Android Keystore used
+  directly (see `CONNECTIVITY_TODO.md`); Tink and its R8 `-keep` rule are gone with it. Original
+  note: `androidx.security:security-crypto` 1.1.0 (`SessionPreferences.kt`)
   now surfaces `-Xlint`-style deprecation warnings on `MasterKey`/`EncryptedSharedPreferences`
   under the newer Kotlin toolchain (see "Dependency update" below) — Google has flagged this API
   surface for eventual replacement, but 1.1.0 is still the latest published version (no successor
@@ -342,7 +348,7 @@ point flagged above was fixed rather than just tracked.
     request class doesn't follow this `*Dto`/`*Request` naming convention, it must be added here
     explicitly.**
   - **Tink** (`com.google.crypto.tink.**`, pulled in by `androidx.security-crypto` for
-    `EncryptedSharedPreferences`): known to resolve some crypto primitives by class name at
+    `EncryptedSharedPreferences`; **rule removed 2026-10-26** along with the library): known to resolve some crypto primitives by class name at
     runtime; shrinking/renaming those classes is a documented cause of crashes on first launch in
     other Android apps using this library. Kept wholesale (`-keep` + `-dontwarn`) rather than
     risking a crash on the exact file that stores the user's credentials.
@@ -356,7 +362,7 @@ point flagged above was fixed rather than just tracked.
     name, e.g. `SystemInfoDto`, `PoolDto`, `AlertDto`, `JobDto`...) — the keep rule works as
     intended.
   - `com.google.crypto.tink.*` classes confirmed present in the dex (thousands of matches) — not
-    stripped.
+    stripped. (Moot since 2026-10-26: Tink is no longer a dependency.)
   - `MainActivity`/`TrueNasApplication` still have their original names — expected and harmless,
     AGP's default rules always keep Android components referenced from the manifest.
   - Resource shrinking also kicked in automatically as part of the same `optimization` block (no
@@ -407,10 +413,46 @@ Still open:
   `TrueNasApplication.onCreate` (global setting, covers any future AndroidSVG use). Checked on the
   emulator with a harmless 10³ trap SVG (entity in `<title>`): library default → title expanded to
   3000 chars; with the app setting → 0, no error, and the Immich icon still renders.
-- [ ] Icon fetch accepts any scheme, `http://` included — restrict to `https://` (the TrueNAS CDN
-  is HTTPS)?
-- [ ] AndroidSVG's last release is 1.4 (2019), effectively unmaintained — no known CVE, but no CVE
-  database was queried; re-check at the next dependency audit.
+- [x] Icon fetch accepts any scheme, `http://` included — fixed 2026-10-26: `httpsIconUrl`
+  (`AppsScreen.kt`) upgrades `http://` to `https://` and refuses any other scheme or malformed URL
+  (default icon shown instead), and `imageOkHttpClient` now has `followSslRedirects(false)` so an
+  `https://` icon can't be redirected back to `http://` (OkHttp follows such redirects by default).
+  Upgrading rather than refusing keeps icons working for a custom app whose host also serves HTTPS.
+  Unit-tested in `AppIconTest`.
+- [x] AndroidSVG's last release is 1.4 (2019), effectively unmaintained — no known CVE, but no CVE
+  database was queried; re-check at the next dependency audit. Checked 2026-10-26 via OSV.dev
+  (see below): no known vulnerability. Still unmaintained — re-check at each audit.
+
+## Dependency audit + credential storage rewrite (2026-10-26)
+
+**CVE scan** (first one actually done — the 2026-09-11 update only checked versions): the full
+`releaseRuntimeClasspath` (`./gradlew :app:dependencies`, 114 resolved artifacts, transitive ones
+included) was sent to OSV.dev's batch API (`/v1/querybatch`, which aggregates GitHub Advisories
+and NVD). Result: **0 known vulnerabilities**. The query was sanity-checked against a version known
+to be vulnerable (`gson:2.8.8` → `GHSA-4jrv-ppp4-jm57`) so an empty answer means "nothing found",
+not "query broken". Not covered: Gradle plugins and test-only dependencies (not in the APK).
+
+**Version check** (Google Maven + Maven Central, stable only): minor updates available but not
+applied yet — AGP 9.3.2 → 9.4.1 (the 9.4.0 Android Studio incompatibility above needs re-checking
+first), Gradle 9.5.0 → 9.8.2, Kotlin 2.4.20 → 2.4.21, `core-ktx` 1.19.0 → 1.19.1, OkHttp 5.5.0 →
+5.5.1, Gson 2.14.0 → 2.15.0. Everything else at latest stable.
+
+**Credential storage rewrite**: the one stale transitive dependency was Tink 1.8.0 (latest 1.24.0),
+stuck there by `androidx.security:security-crypto` 1.1.0 — deprecated by Google, no new release to
+move to. Rather than swap it for Tink used directly (a whole crypto library + protobuf for 3
+strings), `SessionPreferences` now uses the Android Keystore directly: AES-256-GCM, non-extractable
+key, random 12-byte IV per write, preference name bound as associated data. Result: **no crypto
+dependency at all**, and the `-keep class com.google.crypto.tink.**` rule (which exempted thousands
+of classes from R8) is gone. Old sessions are deleted, not migrated — see `CONNECTIVITY_TODO.md`
+for the full rationale. Unit-tested in `SessionCryptoTest` (round-trip, fresh IV, slot swap, wrong
+key, tampering, malformed input) with a software AES key, since the Keystore isn't available on the
+JVM; the Keystore path itself was confirmed working on the user's device (login + restore over
+HTTPS).
+
+- [ ] Redo the `run-as ... cat shared_prefs/` check on `truenas_session_v2.xml` (debug build):
+  confirm the three string values are Base64 ciphertext, and that no plaintext copy remains.
+- [ ] Confirm in a release build's dex that no `com.google.crypto.tink` / `androidx.security.crypto`
+  class is left (the dependency tree already shows none).
 
 ## Points of attention
 
