@@ -8,15 +8,17 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
 - **Network**: OkHttp + Gson, manual REST calls to `/api/v2.0/...` (no Retrofit). The authenticated
   `OkHttpClient` (`TrueNasApplication.okHttpClient`) carries an `AuthInterceptor` that adds auth to
   every request; a second, separate `imageOkHttpClient` (no interceptor) is used only for app icons
-  served by a public CDN, so the NAS credentials are never sent there — see `APPS_TODO.md`. Icons
+  served by a public CDN, so the NAS credentials are never sent there, and only over HTTPS (`http://`
+  icon URLs upgraded, scheme-switching redirects refused) — see `APPS_TODO.md`. Icons
   are PNG/JPEG (`BitmapFactory`) or SVG (AndroidSVG, internal XML entities disabled app-wide in
   `TrueNasApplication.onCreate`), with a bounded download and decode size (`AppsScreen.kt`).
 - **Auth**: Basic Auth (`Authorization: Basic base64(user:pass)`), no API key or session cookie —
   TrueNAS Scale has no `/auth/login` REST route. `CredentialsStore` keeps the credentials in
   memory; `TrueNasAuthRepository.login()` validates them via a GET `/api/v2.0/system/info` before
-  storing them there. `SessionPreferences` (EncryptedSharedPreferences) persists them if "Stay
-  logged in" is checked. "Stay logged in" is unavailable for an `http://` address (checkbox
-  disabled in `LoginScreen`, guarded again in `LoginViewModel` and on restore in
+  storing them there. `SessionPreferences` (AES-GCM, key in the Android Keystore — no crypto
+  library, see `CONNECTIVITY_TODO.md`) persists them if "Stay logged in" is checked. "Stay
+  logged in" is unavailable for an `http://` address (checkbox disabled in `LoginScreen`,
+  guarded again in `LoginViewModel` and on restore in
   `TrueNasApplication.onCreate`, via the shared `TrueNasUrl.isHttp` helper) — see
   `CONNECTIVITY_TODO.md`.
 - **Unencrypted HTTP**: allowed to any address (IP or hostname), but only after the user's explicit

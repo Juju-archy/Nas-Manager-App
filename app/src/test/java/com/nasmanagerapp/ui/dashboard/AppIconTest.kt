@@ -53,4 +53,27 @@ class AppIconTest {
         val sampleSize = iconSampleSize(1_000_000, 100, 110)
         assertEquals(true, 1_000_000 / sampleSize < 220)
     }
+
+    @Test
+    fun `keeps an https icon url as is`() {
+        val url = "https://media.sys.truenas.net/apps/plex/icons/icon.png"
+        assertEquals(url, httpsIconUrl(url))
+    }
+
+    @Test
+    fun `upgrades an http icon url to https`() {
+        assertEquals(
+            "https://media.sys.truenas.net/apps/plex/icons/icon.png?v=2",
+            httpsIconUrl("http://media.sys.truenas.net/apps/plex/icons/icon.png?v=2"),
+        )
+    }
+
+    @Test
+    fun `refuses other schemes and malformed icon urls`() {
+        assertNull(httpsIconUrl("ftp://example.com/icon.png"))
+        assertNull(httpsIconUrl("file:///sdcard/icon.png"))
+        assertNull(httpsIconUrl("data:image/png;base64,AAAA"))
+        assertNull(httpsIconUrl("not a url"))
+        assertNull(httpsIconUrl(""))
+    }
 }

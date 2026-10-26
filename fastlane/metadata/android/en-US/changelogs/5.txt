@@ -1,0 +1,3 @@
+Security:
+• Saved credentials ("Stay logged in") are now encrypted directly with the Android Keystore, with one less third-party library. If "Stay logged in" was checked, you will need to log in once more after this update
+• App icons are now only downloaded over HTTPS
