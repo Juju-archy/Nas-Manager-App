@@ -83,6 +83,56 @@ screen.
 | IPv6 (ULA `fc00::/7`, link-local `fe80::/10`, loopback, or public) | ✅ Implemented | No more special handling needed, address-range filtering was removed. |
 | Authentication with TrueNAS credentials (user/password, Basic Auth) | ✅ Implemented | See section above. Same type of account as used for the TrueNAS web UI. |
 
+## Android 17 local network permission (`ACCESS_LOCAL_NETWORK`)
+
+Reported in GitHub issue #5 (fix proposed by its author, cherry-picked with its authorship kept,
+then reworked), possibly related to #7. Android 17's "Local Network Protections": an app targeting
+SDK 37 (this one, since the first commit) has every connection to a LAN address blocked until the
+user grants `ACCESS_LOCAL_NETWORK` — reference:
+https://developer.android.com/privacy-and-security/local-network-permission. Internet addresses
+(public domain, VPN) aren't affected. A blocked TCP connection surfaces as a plain **timeout**
+(15 s here), not an explicit error.
+
+- **Not reproduced on the user's device** (Pixel 9 Pro, Android 17, 2026-11-02): the 1.2.1
+  release, which doesn't declare the permission, reaches the NAS at `http://192.168.x.x:80`
+  without any issue — enforcement doesn't seem active on every Android 17 build yet. The reporter
+  of #5 (Pixel 9, Android 17) does reproduce it; build number asked in the issue.
+- **Not reproducible on the Android 17 emulator either** (API 37 image, build
+  `CP31.260623.012`, 2026-11-02): `dumpsys platform_compat` shows `RESTRICT_LOCAL_NETWORK`
+  **disabled by default, not tied to targetSdk 37** — Google hasn't switched enforcement on in
+  that build, which likely explains the user's Pixel too. Forcing it for the app
+  (`adb shell am compat enable RESTRICT_LOCAL_NETWORK app.nasmanager` + reboot) still blocked
+  nothing: the app reached the emulator's gateway `10.0.2.2` and an on-link `10.0.2.15` service.
+  Note that from the emulator, a NAS on the host's LAN (`192.168.x.x`) is reached *through* the
+  gateway (NAT), so it's never "local network" for Android there anyway — the notice and its
+  buttons can only be validated on a real device where enforcement is active (e.g. the #5
+  reporter's). What was validated (Pixel 9 Pro + emulator): dialog on the first "Log in" tap, a
+  denial doesn't block the login, no notice when the server answers.
+- The permission doesn't exist before API 37 (`minSdk` is 35): checking it there always reports
+  "denied", so every check goes through `hasLocalNetworkAccess()` (`ui/LocalNetworkAccess.kt`),
+  which returns true before Android 17.
+- Asked **when the user taps "Log in"** (once per login screen), not at launch: no request
+  without context in an app handling credentials, no re-request on rotation. The login goes
+  ahead whatever the answer — a NAS reached over the Internet or a VPN doesn't need it.
+- Not cached by the app: Android keeps the grant, and it can be revoked (by the user, or by
+  Android's auto-reset of unused apps' permissions), so it's re-read on each check and on resume.
+- If the login fails because the server is unreachable (`isServerUnreachable`: any `IOException`
+  except TLS errors), the address is on the local network (`isLocalNetworkHost`: private IPv4,
+  link-local, IPv6 ULA, `.local` name, or a hostname resolving to one of those — DNS stays
+  allowed without the permission; public addresses, Tailscale's 100.64/10 and loopback are not
+  local) and the permission is missing, the login screen shows a notice with
+  "Allow access" (dialog again; granted → login retried) or, once Android won't show the dialog
+  anymore (denied twice), "Open settings" (app details page, back → notice hidden if granted).
+- Restored "Stay logged in" session (login screen skipped): no proactive request; if `system.info`
+  fails as unreachable on a local address while the permission is missing, the same notice
+  appears at the top of the dashboard, and the system info is reloaded once it's granted. The
+  local-address check (possibly a DNS lookup) only runs for `system.info`, never for the 2s
+  polling.
+- `LoginViewModel.connect()` refuses empty fields itself: it can run after the permission dialog
+  in a process recreated by Android, where the never-persisted password is gone.
+- Not done: failing fast (without the 15 s timeout) when the entered address is a private IP and
+  the permission is denied — a hostname can't be checked in advance anyway.
+
 ## Tests done
 
 - `./gradlew compileDebugKotlin testDebugUnitTest` → green build after switching to Basic auth
@@ -120,6 +170,12 @@ screen.
   for an old session saved while on `https://` — confirm that logging in again against `http://`
   doesn't leave a stale password+`isLoggedIn=true` restorable on next launch (covered at the unit
   level by `TrueNasUrlTest`/`TrueNasApplicationTest`, not yet exercised in the running app).
+- [ ] Local network permission on a device where Android 17 enforces it (not the user's Pixel 9
+  Pro, see above): dialog shown on the first "Log in" tap only; granted → LAN login works;
+  denied → notice after the timeout, "Allow access" re-shows the dialog, then "Open settings"
+  after a second denial, and granting there hides the notice on return; restored session with
+  the permission revoked → notice on the dashboard, system info reloaded once granted.
+- [ ] Same flow on Android 15/16: no dialog, no notice, nothing changes.
 - [x] Keystore-backed `SessionPreferences` (2026-10-26 rewrite) on the user's device: login over
   `https://` with "Stay logged in" checked, then the session is restored on the next launch —
   confirmed working by the user on 2026-10-26, on the 1.2.1 build (fresh install, not an upgrade).

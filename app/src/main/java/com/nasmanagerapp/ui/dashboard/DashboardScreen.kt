@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,8 @@ import com.nasmanagerapp.TrueNasApplication
 import com.nasmanagerapp.data.dashboard.LiveMetrics
 import com.nasmanagerapp.data.dashboard.PoolSummary
 import com.nasmanagerapp.data.dashboard.SystemInfo
+import com.nasmanagerapp.ui.LocalNetworkAccessNotice
+import com.nasmanagerapp.ui.rememberLocalNetworkAccess
 import com.nasmanagerapp.ui.theme.NasManagerAppTheme
 import kotlinx.coroutines.launch
 
@@ -93,6 +96,17 @@ fun DashboardRoute(
     val scope = rememberCoroutineScope()
 
     fun closeDrawer() = scope.launch { drawerState.close() }
+
+    // A restored "Stay logged in" session skips the login screen, where the local network
+    // permission is normally asked for. If it's missing (revoked, auto-reset after months unused,
+    // or a session saved by a version that didn't ask for it) and the NAS is unreachable, the
+    // dashboard shows the notice instead (only if the NAS address is on the local network). Once granted — from the dialog or the app's settings —
+    // the system info is reloaded; the 2s polling of the other cards picks up on its own.
+    val localNetwork = rememberLocalNetworkAccess()
+    val showLocalNetworkNotice = uiState.systemInfoLocalServerUnreachable && !localNetwork.isGranted
+    LaunchedEffect(localNetwork.isGranted) {
+        if (localNetwork.isGranted && uiState.systemInfoLocalServerUnreachable) viewModel.retryLoadSystemInfo()
+    }
 
     // Mirrors the onBack callback of whichever nested screen is currently shown, so the system
     // back gesture/button steps back through the drawer navigation instead of closing the app.
@@ -217,6 +231,11 @@ fun DashboardRoute(
                     onRetrySystemInfo = viewModel::retryLoadSystemInfo,
                     onOpenGraph = { selectedGraph = it },
                     onOpenMenu = { scope.launch { drawerState.open() } },
+                    localNetworkNotice = if (showLocalNetworkNotice) {
+                        { LocalNetworkAccessNotice(localNetwork) }
+                    } else {
+                        null
+                    },
                 )
             }
         }
@@ -232,6 +251,7 @@ fun DashboardScreen(
     onOpenGraph: (GraphTarget) -> Unit,
     onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier,
+    localNetworkNotice: (@Composable () -> Unit)? = null,
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -259,6 +279,7 @@ fun DashboardScreen(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            localNetworkNotice?.invoke()
             SystemInfoCard(
                 systemInfo = uiState.systemInfo,
                 isLoading = uiState.isLoadingSystemInfo,

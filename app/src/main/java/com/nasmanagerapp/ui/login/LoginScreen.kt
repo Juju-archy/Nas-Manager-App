@@ -40,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,7 +58,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nasmanagerapp.R
 import com.nasmanagerapp.TrueNasApplication
 import com.nasmanagerapp.data.network.TrueNasUrl
+import com.nasmanagerapp.ui.LocalNetworkAccessNotice
 import com.nasmanagerapp.ui.ProjectInfo
+import com.nasmanagerapp.ui.rememberLocalNetworkAccess
 import com.nasmanagerapp.ui.theme.NasManagerAppTheme
 
 /**
@@ -71,13 +74,20 @@ data class LoginUiState(
     val acceptHttpRisks: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    /**
+     * Set together with [errorMessage] when a server on the local network couldn't be reached at
+     * all — the only case where a missing local network permission may be the cause, see
+     * `LocalNetworkAccess.kt`. Only meaningful while [errorMessage] is non-null (cleared with it
+     * on any field change).
+     */
+    val localServerUnreachable: Boolean = false,
 ) {
     // Overridden so the password never appears in a log line, crash report, or debugger view that
     // prints this state via toString() — the default data class toString() would include it as-is.
     override fun toString(): String =
         "LoginUiState(serverUrl='$serverUrl', username='$username', password='***', " +
             "rememberMe=$rememberMe, acceptHttpRisks=$acceptHttpRisks, isLoading=$isLoading, " +
-            "errorMessage=$errorMessage)"
+            "errorMessage=$errorMessage, localServerUnreachable=$localServerUnreachable)"
 }
 
 @Composable
@@ -88,6 +98,20 @@ fun LoginRoute(onLoginSuccess: () -> Unit, modifier: Modifier = Modifier) {
     )
     val uiState by viewModel.uiState.collectAsState()
 
+    // Survives a rotation while the system dialog is shown, so the login still goes ahead after it.
+    var connectAfterPermission by rememberSaveable { mutableStateOf(false) }
+    val localNetwork = rememberLocalNetworkAccess { granted ->
+        if (connectAfterPermission) {
+            // Asked right before logging in: go ahead whatever the answer — a NAS reached over
+            // the Internet or a VPN doesn't need the permission.
+            connectAfterPermission = false
+            viewModel.connect(onSuccess = onLoginSuccess)
+        } else if (granted) {
+            // Granted from the notice after a failed attempt: retry right away.
+            viewModel.connect(onSuccess = onLoginSuccess)
+        }
+    }
+
     LoginScreen(
         uiState = uiState,
         onServerUrlChange = viewModel::onServerUrlChange,
@@ -95,7 +119,23 @@ fun LoginRoute(onLoginSuccess: () -> Unit, modifier: Modifier = Modifier) {
         onPasswordChange = viewModel::onPasswordChange,
         onRememberMeChange = viewModel::onRememberMeChange,
         onAcceptHttpRisksChange = viewModel::onAcceptHttpRisksChange,
-        onConnectClick = { viewModel.connect(onSuccess = onLoginSuccess) },
+        onConnectClick = {
+            // Asked once, when the user actually tries to reach the NAS, rather than at launch
+            // with no context. Afterwards, only from the notice below if the login fails.
+            if (!localNetwork.isGranted && !localNetwork.hasRequested) {
+                connectAfterPermission = true
+                localNetwork.request()
+            } else {
+                viewModel.connect(onSuccess = onLoginSuccess)
+            }
+        },
+        localNetworkNotice = if (
+            uiState.errorMessage != null && uiState.localServerUnreachable && !localNetwork.isGranted
+        ) {
+            { LocalNetworkAccessNotice(localNetwork) }
+        } else {
+            null
+        },
         modifier = modifier,
     )
 }
@@ -111,6 +151,7 @@ fun LoginScreen(
     onAcceptHttpRisksChange: (Boolean) -> Unit,
     onConnectClick: () -> Unit,
     modifier: Modifier = Modifier,
+    localNetworkNotice: (@Composable () -> Unit)? = null,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -225,6 +266,11 @@ fun LoginScreen(
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+
+                if (localNetworkNotice != null) {
+                    Spacer(Modifier.height(12.dp))
+                    localNetworkNotice()
                 }
 
                 Spacer(Modifier.height(8.dp))
