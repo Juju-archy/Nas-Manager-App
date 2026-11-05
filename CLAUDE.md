@@ -21,6 +21,13 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   guarded again in `LoginViewModel` and on restore in
   `TrueNasApplication.onCreate`, via the shared `TrueNasUrl.isHttp` helper) — see
   `CONNECTIVITY_TODO.md`.
+- **Local network permission** (`ui/LocalNetworkAccess.kt`): Android 17 blocks LAN connections of
+  apps targeting SDK 37 until `ACCESS_LOCAL_NETWORK` is granted. Asked on the first "Log in" tap
+  (never required to log in — Internet/VPN addresses don't need it), always checked through
+  `hasLocalNetworkAccess()` (true before API 37, where the permission doesn't exist); a notice with
+  "Allow access"/"Open settings" appears on the login screen or the dashboard when a server on the
+  local network (`isLocalNetworkHost`) is unreachable while it's missing — see
+  `CONNECTIVITY_TODO.md`.
 - **Unencrypted HTTP**: allowed to any address (IP or hostname), but only after the user's explicit
   consent (checkbox in `LoginScreen`, `acceptHttpRisks` parameter re-checked in
   `TrueNasAuthRepository.login()`). No filtering by IP range — see `CONNECTIVITY_TODO.md` for the

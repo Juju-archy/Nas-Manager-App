@@ -2,6 +2,8 @@ package com.nasmanagerapp.data.auth
 
 import com.nasmanagerapp.data.network.CredentialsStore
 import com.nasmanagerapp.data.network.TrueNasUrl
+import com.nasmanagerapp.data.network.isLocalNetworkHost
+import com.nasmanagerapp.data.network.isServerUnreachable
 import java.io.IOException
 import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +13,14 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-class TrueNasApiException(message: String) : Exception(message)
+open class TrueNasApiException(message: String) : Exception(message)
+
+/**
+ * A server on the local network ([isLocalNetworkHost]) couldn't be reached at all
+ * ([isServerUnreachable]) — the only failure for which a missing Android 17 local network
+ * permission is a plausible cause, see `LocalNetworkAccess.kt`.
+ */
+class LocalServerUnreachableException(message: String) : TrueNasApiException(message)
 
 /**
  * Talks to the TrueNAS Scale REST API (`/api/v2.0`). TrueNAS has no REST login endpoint — every
@@ -79,7 +88,16 @@ class TrueNasAuthRepository(
                     )
                 )
             } catch (e: IOException) {
-                Result.failure(TrueNasApiException("Couldn't reach the server. Check the address and your network."))
+                val message = "Couldn't reach the server. Check the address and your network."
+                // Still on Dispatchers.IO: isLocalNetworkHost may resolve the hostname.
+                val host = TrueNasUrl.normalize(serverUrl).toHttpUrlOrNull()?.host
+                Result.failure(
+                    if (isServerUnreachable(e) && host != null && isLocalNetworkHost(host)) {
+                        LocalServerUnreachableException(message)
+                    } else {
+                        TrueNasApiException(message)
+                    }
+                )
             }
         }
 

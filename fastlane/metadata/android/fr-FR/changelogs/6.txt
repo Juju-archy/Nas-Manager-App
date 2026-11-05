@@ -1,0 +1,2 @@
+Corrections :
+• Android 17 : l’app demande maintenant l’autorisation « Appareils à proximité / réseau local » à la connexion, nécessaire pour joindre un NAS sur le réseau local (ex. 192.168.x.x). Si le NAS est injoignable sans elle, un message l’explique, avec un bouton pour l’autoriser

@@ -10,6 +10,7 @@ import com.nasmanagerapp.data.dashboard.BootInfo
 import com.nasmanagerapp.data.dashboard.CpuPageHistory
 import com.nasmanagerapp.data.dashboard.DashboardApiException
 import com.nasmanagerapp.data.dashboard.DashboardRepository
+import com.nasmanagerapp.data.dashboard.DashboardLocalServerUnreachableException
 import com.nasmanagerapp.data.dashboard.JobState
 import com.nasmanagerapp.data.dashboard.LiveMetrics
 import com.nasmanagerapp.data.dashboard.MetricsHistory
@@ -37,6 +38,8 @@ data class DashboardUiState(
     val systemInfo: SystemInfo? = null,
     val isLoadingSystemInfo: Boolean = true,
     val systemInfoError: String? = null,
+    /** [systemInfoError] is due to a server on the local network being unreachable — see `LocalNetworkAccess.kt`. */
+    val systemInfoLocalServerUnreachable: Boolean = false,
     val pools: List<PoolSummary> = emptyList(),
     val isLoadingPools: Boolean = true,
     val poolsError: String? = null,
@@ -390,7 +393,7 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
     }
 
     private fun loadSystemInfo() {
-        _uiState.update { it.copy(isLoadingSystemInfo = true, systemInfoError = null) }
+        _uiState.update { it.copy(isLoadingSystemInfo = true, systemInfoError = null, systemInfoLocalServerUnreachable = false) }
         viewModelScope.launch {
             repository.getSystemInfo()
                 .onSuccess { info ->
@@ -398,7 +401,11 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
                 }
                 .onFailure { error ->
                     _uiState.update {
-                        it.copy(isLoadingSystemInfo = false, systemInfoError = error.message)
+                        it.copy(
+                            isLoadingSystemInfo = false,
+                            systemInfoError = error.message,
+                            systemInfoLocalServerUnreachable = error is DashboardLocalServerUnreachableException,
+                        )
                     }
                 }
         }

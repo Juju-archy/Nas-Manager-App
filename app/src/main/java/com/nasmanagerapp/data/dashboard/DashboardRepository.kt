@@ -3,18 +3,27 @@ package com.nasmanagerapp.data.dashboard
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
+import com.nasmanagerapp.data.network.isLocalNetworkHost
+import com.nasmanagerapp.data.network.isServerUnreachable
 import java.io.IOException
 import java.time.OffsetDateTime
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-class DashboardApiException(message: String) : Exception(message)
+open class DashboardApiException(message: String) : Exception(message)
+
+/**
+ * A server on the local network couldn't be reached at all — see `isServerUnreachable`,
+ * `isLocalNetworkHost` and `LocalNetworkAccess.kt`. Only raised by [DashboardRepository.getSystemInfo].
+ */
+class DashboardLocalServerUnreachableException(message: String) : DashboardApiException(message)
 
 /**
  * Reads TrueNAS system/pool/reporting data for the dashboard.
@@ -52,7 +61,7 @@ class DashboardRepository(
                 loadAverage5m = dto.loadavg.getOrElse(1) { 0.0 },
                 loadAverage15m = dto.loadavg.getOrElse(2) { 0.0 },
             )
-        }.toDashboardResult()
+        }.flagLocalServerUnreachable().toDashboardResult()
     }
 
     suspend fun getPools(): Result<List<PoolSummary>> = withContext(Dispatchers.IO) {
@@ -493,6 +502,21 @@ class DashboardRepository(
                 throw DashboardApiException("Empty response from the server.")
             }
             return gson.fromJson(bodyString, type)
+        }
+    }
+
+    /**
+     * Turns an "unreachable" failure into [DashboardLocalServerUnreachableException] when the
+     * server is on the local network. Must run before [toDashboardResult], which drops the cause,
+     * and on Dispatchers.IO (may resolve the hostname) — only used by [getSystemInfo], the call
+     * the dashboard's local network notice is based on, so the 2s polling never triggers a lookup.
+     */
+    private fun <T> Result<T>.flagLocalServerUnreachable(): Result<T> = recoverCatching { error ->
+        val host = baseUrlProvider().toHttpUrlOrNull()?.host
+        throw if (isServerUnreachable(error) && host != null && isLocalNetworkHost(host)) {
+            DashboardLocalServerUnreachableException("Couldn't reach the server.")
+        } else {
+            error
         }
     }
 

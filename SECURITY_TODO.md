@@ -58,7 +58,12 @@ still active on it):
 - ✅ **Exposed components (axis 6)**: `AndroidManifest.xml` read in full — a single `Activity`
   (`MainActivity`, `exported="true"` only because it's the launcher, normal), no
   `Service`/`BroadcastReceiver`/`ContentProvider`, no deep link/intent filter beyond
-  `MAIN`/`LAUNCHER`. Single permission: `INTERNET`. Nothing to fix here.
+  `MAIN`/`LAUNCHER`. Permissions: `INTERNET`, plus `ACCESS_LOCAL_NETWORK` since 2026-11-02
+  (Android 17 blocks LAN connections of apps targeting SDK 37 without it — GitHub issue #5, see
+  `CONNECTIVITY_TODO.md`): runtime permission, asked only on the first "Log in" tap, never
+  required to log in; no other permission of its `NEARBY_DEVICES` group (Bluetooth, Wi-Fi scan)
+  nor any location permission is requested. Merged release manifest re-checked the same day: no
+  other permission or exported component added by this change. Nothing to fix here.
 - ⚠️ **No `FLAG_SECURE` (axis 8)** *(original finding, now fixed)*: confirmed both statically
   (`grep FLAG_SECURE` → no result anywhere in `app/src/main/java`) and dynamically —
   `adb shell screencap` on the foregrounded app (dashboard, session automatically restored via

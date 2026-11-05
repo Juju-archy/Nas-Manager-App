@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.nasmanagerapp.TrueNasApplication
+import com.nasmanagerapp.data.auth.LocalServerUnreachableException
 import com.nasmanagerapp.data.auth.SessionPreferences
 import com.nasmanagerapp.data.auth.TrueNasAuthRepository
 import com.nasmanagerapp.data.network.TrueNasUrl
@@ -58,6 +59,10 @@ class LoginViewModel(
     fun connect(onSuccess: () -> Unit) {
         val state = _uiState.value
         if (state.isLoading) return
+        // The button is already disabled with an empty field, but connect() can also run after the
+        // local network permission dialog — possibly in a process recreated by Android meanwhile,
+        // where the password typed before (never persisted) is gone. Never send a request then.
+        if (state.serverUrl.isBlank() || state.username.isBlank() || state.password.isBlank()) return
 
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
@@ -79,7 +84,11 @@ class LoginViewModel(
                 }
                 .onFailure { error ->
                     _uiState.update {
-                        it.copy(isLoading = false, errorMessage = error.message ?: "Unknown error.")
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "Unknown error.",
+                            localServerUnreachable = error is LocalServerUnreachableException,
+                        )
                     }
                 }
         }
