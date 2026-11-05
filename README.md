@@ -141,6 +141,12 @@ app/src/main/java/com/nasmanagerapp/
 - `SYSTEM_TODO.md` — System screen tracking (`system.general`/`network.configuration`/`interface`/`boot.get_state`/`boot.environment`, formats verified live, tests pending).
 - `SECURITY_TODO.md` — security testing tracking (static and dynamic).
 
+## Acknowledgements
+
+- [@naorleizer](https://github.com/naorleizer) — reported the Android 17 local network issue
+  ([#5](https://github.com/Juju-archy/Nas-Manager-App/issues/5)), diagnosed its cause (Local Network
+  Protections) and contributed the initial fix.
+
 ## License
 
 Copyright (C) 2026 Julie POUNY
