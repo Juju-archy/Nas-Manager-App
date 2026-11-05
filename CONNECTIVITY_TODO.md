@@ -175,7 +175,8 @@ https://developer.android.com/privacy-and-security/local-network-permission. Int
   denied → notice after the timeout, "Allow access" re-shows the dialog, then "Open settings"
   after a second denial, and granting there hides the notice on return; restored session with
   the permission revoked → notice on the dashboard, system info reloaded once granted.
-- [ ] Same flow on Android 15/16: no dialog, no notice, nothing changes.
+- [x] Same flow on Android 15/16: no dialog, no notice, nothing changes — confirmed by the user
+  on 2026-11-05 on a Xiaomi Redmi Note 15 Pro (Android 16), 1.2.2 build, no regression.
 - [x] Keystore-backed `SessionPreferences` (2026-10-26 rewrite) on the user's device: login over
   `https://` with "Stay logged in" checked, then the session is restored on the next launch —
   confirmed working by the user on 2026-10-26, on the 1.2.1 build (fresh install, not an upgrade).

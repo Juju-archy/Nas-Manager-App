@@ -1,0 +1,2 @@
+Fixes:
+• Android 17: the app now asks for the "Nearby devices / local network" permission when you log in, required to reach a NAS on your local network (e.g. 192.168.x.x). If the NAS is unreachable while it is missing, a notice explains why, with a button to allow it
