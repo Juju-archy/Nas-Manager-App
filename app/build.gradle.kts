@@ -13,8 +13,8 @@ android {
         applicationId = "app.nasmanager"
         minSdk = 35
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.2.2"
+        versionCode = 7
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -50,6 +50,10 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        // android.util.Log calls in the RPC client must not throw in JVM unit tests.
+        unitTests.isReturnDefaultValues = true
+    }
     // AGP otherwise embeds a dependency metadata block encrypted with a Google key, which F-Droid
     // rejects as an opaque blob.
     dependenciesInfo {
@@ -76,6 +80,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidsvg)
     testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

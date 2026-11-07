@@ -12,17 +12,15 @@ side once this work was done.
 
 ### App list — `GET /api/v2.0/app`
 
-Real response: 8 installed apps (`planka`, `onlyoffice-document-server`, `nextcloud3`,
-`immich`, `home-assistant`, `firefly-iii`, `nginx-proxy-manager`, `jellyfin`) — the first 6
-with `upgrade_available: true`, consistent with the "Updates are available for 6 applications"
+Real response: 8 installed apps, 6 of them with `upgrade_available: true`, consistent with the "Updates are available for 6 applications"
 alert already seen in `ALERTS_TODO.md`.
 
 - Each entry has `id`/`name` (identical in every case observed), `state` (enum confirmed by the
   `api.truenas.com` docs: `RUNNING`, `STOPPED`, `DEPLOYING`, `CRASHED`, `STOPPING` — only `RUNNING`
   seen live, all 8 test apps were running), `version`/`latest_version`/`human_version`,
   `upgrade_available`/`image_updates_available` (bool), `metadata.title` (display name, e.g.
-  `"Planka"`) and `metadata.icon` (direct URL, e.g.
-  `https://media.sys.truenas.net/apps/planka/icons/icon.png` — a public CDN, **not** the user's
+  `"Example App"`) and `metadata.icon` (direct URL, e.g.
+  `https://media.sys.truenas.net/apps/<app>/icons/icon.png` — a public CDN, **not** the user's
   TrueNAS server, hence `TrueNasApplication.imageOkHttpClient` kept separate from the authenticated
   client).
 - `active_workloads`/`container_details` exist (per-container detail of the compose stack) but
@@ -106,25 +104,24 @@ From the `api.truenas.com` docs (v25.10, checked 2026-10-25): `app.start` and `a
   (version, `upgrade_available`, possibly `state` while redeploying).
 - Icons are loaded via a **separate**, unauthenticated `OkHttpClient`
   (`TrueNasApplication.imageOkHttpClient`) — icon URLs point to a public CDN
-  (`media.sys.truenas.net`), not the user's server; sending the NAS's Basic Auth to a third party
+  (`media.sys.truenas.net`), not the user's server; sending the NAS credentials to a third party
   would be a needless credential leak.
 - No image-loading library (Coil considered then dropped — see below): manual loading in
   `fetchIconBitmap`, consistent with the project's philosophy ("OkHttp + Gson... no Retrofit") —
   `BitmapFactory` for PNG/JPEG, AndroidSVG (a renderer, not a loader) for SVG, see below.
-- Icon formats vary per app on the CDN (checked via `curl` 2026-10-08): `plex`, `planka`,
-  `pihole`... → `icon.png` (`image/png`); `jellyfin`, `nextcloud`, `immich`, `syncthing`... →
-  `icon.svg` (`image/svg+xml`). `BitmapFactory` can't decode SVG (returned `null` → fallback icon,
+- Icon formats vary per app on the CDN (checked via `curl` 2026-10-08): some apps serve
+  `icon.png` (`image/png`), others `icon.svg` (`image/svg+xml`). `BitmapFactory` can't decode SVG (returned `null` → fallback icon,
   hence "some icons show, others don't"), so SVGs are rasterized with AndroidSVG
   (`com.caverock:androidsvg-aar`, Apache 2.0, pure Java, no transitive deps — unlike Coil, no
   Kotlin stdlib clash). Picked by `Content-Type`, falling back to the URL extension
   (`isSvgIcon`, unit-tested). `renderSvg` forces the document's width/height to `100%`: without
-  that, a root `width="590"` (Immich's icon, which also has no `viewBox`) was drawn at 590 px
-  into the 40dp bitmap, leaving only an empty corner visible — checked on an emulator against the
-  5 real SVGs of a test server (Immich 0% → 63% of pixels drawn, OnlyOffice no longer cropped,
-  Jellyfin/Nextcloud/Nginx Proxy Manager still fine).
+  that, a root `width="590"` (seen on one catalog icon, which also has no `viewBox`) was drawn at
+  590 px into the 40dp bitmap, leaving only an empty corner visible — checked on an emulator
+  against 5 real SVG icons (the affected one went from 0% to 63% of pixels drawn, another one no
+  longer cropped, the rest still fine).
 - Icon fetches are bounded (the URL comes from the NAS, so it isn't trusted): body capped at 1 MiB
   (`MAX_ICON_BYTES`, real icons ≤ ~80 KB), PNG/JPEG decoded subsampled to about the displayed
-  40dp (`iconSampleSize` — e.g. qBittorrent's 1024 px icon → 128 px, ~64 KB instead of ~4 MB),
+  40dp (`iconSampleSize` — e.g. a 1024 px icon → 128 px, ~64 KB instead of ~4 MB),
   SVG internal XML entities disabled app-wide (`TrueNasApplication.onCreate`). No
   `SVGExternalFileResolver` is registered, so an SVG can't make AndroidSVG fetch anything else.
   Security detail and what's still open: `SECURITY_TODO.md`, "App icons: SVG support + bounded
@@ -153,7 +150,7 @@ for a handful of small icons per screen.
   (not one after another) and each row reflects its own state.
 - [ ] Test an upgrade-failure case (e.g. a buggy app, or server unreachable during polling): check
   the error shows under the right row without blocking the other apps.
-- [x] Check on device that SVG icons (e.g. Jellyfin, Nextcloud, Immich) now render, sharp and
+- [x] Check on device that SVG icons now render, sharp and
   not cropped, alongside PNG ones — confirmed by the user on the emulator, 2026-10-08.
 - [x] Start/Stop works against a real server — confirmed by the user on device, 2026-10-25.
 - [x] Start/Stop vs "Update" mis-taps (user feedback 2026-10-25): status text label dropped, the

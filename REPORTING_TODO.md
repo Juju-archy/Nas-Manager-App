@@ -185,7 +185,7 @@ details:
 The user provided a "throwaway" API key for their real TrueNAS (LAN, reachable from this session)
 for the time it took to diagnose the "no graph on the disk page" bug. Calls made
 (all read-only): `GET /system/info`, `GET /disk`, `GET /pool`, `GET /pool/id/{id}` (both
-pools, "Miyota" and "Omega"), `GET /reporting/graphs`, and several `POST
+pools), `GET /reporting/graphs`, and several `POST
 /reporting/netdata_get_data` (checks on `cpu`/`arcsize`/`interface`, then `disk`/`disktemp`/
 `cputemp`/`load` with and without an identifier). Result: almost every assumption in this
 document since the start of the reporting feature was right — only the `disk`/`disktemp`

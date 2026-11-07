@@ -1,6 +1,7 @@
 package com.nasmanagerapp.data.dashboard
 
 import com.google.gson.Gson
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import org.junit.Assert.assertEquals
@@ -549,13 +550,13 @@ class DashboardRepositoryTest {
     }
 
     @Test
-    fun `parses and maps a real GET api v2_0 alert list response, dropping any dismissed entries`() {
-        // Curl-verified against a live server (see ALERTS_TODO.md) — trimmed to the fields AlertDto
-        // reads, but every value below (ids, levels, dates, formatted text) is the real response.
+    fun `parses and maps an alert list response, dropping any dismissed entries`() {
+        // Same shape as the live response (see ALERTS_TODO.md), trimmed to the fields AlertDto reads;
+        // ids, names and addresses are placeholders.
         val json = """
             [
               {
-                "id": "537d613b-6524-4f8d-b36e-56d7e0d2754c",
+                "id": "00000000-0000-4000-8000-000000000001",
                 "level": "WARNING",
                 "text": "unused when formatted is present",
                 "formatted": "The deprecated REST API was used to authenticate 11439 times in the last 24 hours from the following IP addresses:<br>203.0.113.10, 203.0.113.20.<br>The REST API will be removed in version 26.04.",
@@ -563,18 +564,18 @@ class DashboardRepositoryTest {
                 "datetime": { "${'$'}date": 1787698849000 }
               },
               {
-                "id": "efce150c-d755-45b4-a2d7-786d3171b7c4",
+                "id": "00000000-0000-4000-8000-000000000002",
                 "level": "NOTICE",
                 "text": "New ZFS version or feature flags are available for pool '%s'.",
-                "formatted": "New ZFS version or feature flags are available for pool 'Miyota'.",
+                "formatted": "New ZFS version or feature flags are available for pool 'tank'.",
                 "dismissed": false,
                 "datetime": { "${'$'}date": 1784902280000 }
               },
               {
-                "id": "68aa7a89-171d-4255-ab04-a8e0eb7a1988",
+                "id": "00000000-0000-4000-8000-000000000003",
                 "level": "INFO",
                 "text": "Updates are available for %(count)d application%(plural)s: %(apps)s",
-                "formatted": "Updates are available for 6 applications: planka, onlyoffice-document-server, nextcloud3, immich, home-assistant, firefly-iii",
+                "formatted": "Updates are available for 6 applications: app-a, app-b, app-c, app-d, app-e, app-f",
                 "dismissed": false,
                 "datetime": { "${'$'}date": 1787926769000 }
               },
@@ -595,7 +596,7 @@ class DashboardRepositoryTest {
         assertEquals(3, alerts.size)
         assertEquals(
             AlertInfo(
-                id = "537d613b-6524-4f8d-b36e-56d7e0d2754c",
+                id = "00000000-0000-4000-8000-000000000001",
                 level = AlertLevel.WARNING,
                 message = "The deprecated REST API was used to authenticate 11439 times in the last 24 hours from the following IP addresses:\n203.0.113.10, 203.0.113.20.\nThe REST API will be removed in version 26.04.",
                 epochSeconds = 1787698849000L / 1000,
@@ -604,7 +605,7 @@ class DashboardRepositoryTest {
             alerts[0],
         )
         assertEquals(AlertLevel.NOTICE, alerts[1].level)
-        assertEquals("New ZFS version or feature flags are available for pool 'Miyota'.", alerts[1].message)
+        assertEquals("New ZFS version or feature flags are available for pool 'tank'.", alerts[1].message)
         assertEquals(AlertLevel.INFO, alerts[2].level)
         assertEquals(true, alerts.none { it.id == "already-dismissed-alert" })
     }
@@ -624,24 +625,24 @@ class DashboardRepositoryTest {
     }
 
     @Test
-    fun `parses a real GET api v2_0 app response, preferring metadata title over the raw id`() {
-        // Curl-verified against a live server (see APPS_TODO.md) — trimmed to the fields AppDto
-        // reads, but every value is real (planka: has an upgrade pending; nginx-proxy-manager: up
-        // to date, and its metadata has no "title" to check the fallback to `name`).
+    fun `parses an app query response, preferring metadata title over the raw id`() {
+        // Same shape as the live response (see APPS_TODO.md), trimmed to the fields AppDto reads;
+        // names are placeholders (example-app: has an upgrade pending; other-app: up to date, and
+        // its metadata has no "title" to check the fallback to `name`).
         val json = """
             [
               {
-                "id": "planka",
-                "name": "planka",
+                "id": "example-app",
+                "name": "example-app",
                 "state": "RUNNING",
                 "version": "2.3.27",
                 "latest_version": "2.3.28",
                 "upgrade_available": true,
-                "metadata": { "title": "Planka", "icon": "https://media.sys.truenas.net/apps/planka/icons/icon.png" }
+                "metadata": { "title": "Example App", "icon": "https://media.sys.truenas.net/apps/example-app/icons/icon.png" }
               },
               {
-                "id": "nginx-proxy-manager",
-                "name": "nginx-proxy-manager",
+                "id": "other-app",
+                "name": "other-app",
                 "state": "RUNNING",
                 "version": "1.3.9",
                 "latest_version": "1.3.9",
@@ -666,9 +667,9 @@ class DashboardRepositoryTest {
 
         assertEquals(
             AppInfo(
-                id = "planka",
-                title = "Planka",
-                iconUrl = "https://media.sys.truenas.net/apps/planka/icons/icon.png",
+                id = "example-app",
+                title = "Example App",
+                iconUrl = "https://media.sys.truenas.net/apps/example-app/icons/icon.png",
                 state = AppState.RUNNING,
                 version = "2.3.27",
                 latestVersion = "2.3.28",
@@ -676,7 +677,7 @@ class DashboardRepositoryTest {
             ),
             apps[0],
         )
-        assertEquals("nginx-proxy-manager", apps[1].title)
+        assertEquals("other-app", apps[1].title)
         assertEquals(false, apps[1].upgradeAvailable)
     }
 
@@ -747,5 +748,17 @@ class DashboardRepositoryTest {
     @Test
     fun `shows an unknown service name uppercased`() {
         assertEquals("WEBDAV", serviceLabel("webdav"))
+    }
+
+    @Test
+    fun `job id is read from a numeric result`() {
+        assertEquals(105554L, parseJobId(JsonPrimitive(105554)))
+    }
+
+    @Test
+    fun `non-numeric job result means the job already finished`() {
+        for (result in listOf(JsonNull.INSTANCE, JsonObject(), JsonPrimitive("abc"), JsonPrimitive(true))) {
+            assertNull("$result", parseJobId(result))
+        }
     }
 }

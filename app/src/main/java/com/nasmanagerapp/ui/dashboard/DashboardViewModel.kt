@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class DashboardUiState(
     val systemInfo: SystemInfo? = null,
@@ -82,6 +83,8 @@ data class DashboardUiState(
     val servicesError: String? = null,
     val isSavingServices: Boolean = false,
     val serviceSaveErrors: List<String> = emptyList(),
+    /** The stored credentials were refused on a reconnect: the UI should return to the sign-in screen. */
+    val signedOut: Boolean = false,
 )
 
 /**
@@ -100,6 +103,9 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
         loadSystemInfo()
         loadAlerts()
         startPolling()
+        viewModelScope.launch {
+            repository.authRejected.collect { rejected -> _uiState.update { it.copy(signedOut = rejected) } }
+        }
     }
 
     fun retryLoadSystemInfo() {
@@ -251,7 +257,7 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
     fun upgradeAllOutdatedApps() {
         _uiState.value.apps
             .filter { it.upgradeAvailable && it.id !in _uiState.value.updatingAppIds }
-            .forEach { upgradeApp(it.id) }
+            .forEach { upgradeApp(it.id, UPGRADE_ALL_TIMEOUT_MILLIS) }
     }
 
     /**
@@ -259,12 +265,20 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
      * see `DashboardRepository.upgradeApp`) and polls it to completion, refreshing [DashboardUiState.apps]
      * on success rather than patching just that entry (version/state/upgrade_available all change).
      */
-    fun upgradeApp(id: String) {
+    fun upgradeApp(id: String, timeoutMillis: Long = UPGRADE_TIMEOUT_MILLIS) {
         if (id in _uiState.value.updatingAppIds || id in _uiState.value.switchingAppIds) return
         _uiState.update { it.copy(updatingAppIds = it.updatingAppIds + id, appActionErrors = it.appActionErrors - id) }
         viewModelScope.launch {
-            repository.upgradeApp(id)
-                .mapCatching { jobId -> awaitJobCompletion(jobId) }
+            // One deadline for the whole upgrade (start + polling): the server may only answer
+            // app.upgrade once it's done. Timing out here doesn't cancel the job server-side.
+            runCatching {
+                withTimeoutOrNull(timeoutMillis) {
+                    repository.upgradeApp(id, timeoutMillis).getOrThrow()?.let { awaitJobCompletion(it) }
+                    Unit
+                } ?: throw DashboardApiException(
+                    "The update is taking longer than ${timeoutMillis / 60_000} minutes. It may still be running on the server."
+                )
+            }
                 .onSuccess {
                     _uiState.update { it.copy(updatingAppIds = it.updatingAppIds - id) }
                     loadApps()
@@ -289,7 +303,7 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
         _uiState.update { it.copy(switchingAppIds = it.switchingAppIds + id, appActionErrors = it.appActionErrors - id) }
         viewModelScope.launch {
             (if (start) repository.startApp(id) else repository.stopApp(id))
-                .mapCatching { jobId -> awaitJobCompletion(jobId) }
+                .mapCatching { jobId -> jobId?.let { awaitJobCompletion(it) } }
                 .onSuccess {
                     _uiState.update { it.copy(switchingAppIds = it.switchingAppIds - id) }
                     loadApps()
@@ -454,6 +468,10 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
     private companion object {
         const val POLL_INTERVAL_MILLIS = 2000L
         const val JOB_POLL_INTERVAL_MILLIS = 2000L
+        /** Whole-upgrade deadline for one app's "Update" button. */
+        const val UPGRADE_TIMEOUT_MILLIS = 5 * 60_000L
+        /** Per-app deadline under "Update All", where every upgrade runs at once. */
+        const val UPGRADE_ALL_TIMEOUT_MILLIS = 45 * 60_000L
     }
 }
 
