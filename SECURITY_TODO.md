@@ -417,7 +417,7 @@ Still open:
   "billion laughs" expansion risk) — fixed: `SVG.setInternalEntitiesEnabled(false)` in
   `TrueNasApplication.onCreate` (global setting, covers any future AndroidSVG use). Checked on the
   emulator with a harmless 10³ trap SVG (entity in `<title>`): library default → title expanded to
-  3000 chars; with the app setting → 0, no error, and the Immich icon still renders.
+  3000 chars; with the app setting → 0, no error, and a real SVG icon still renders.
 - [x] Icon fetch accepts any scheme, `http://` included — fixed 2026-10-26: `httpsIconUrl`
   (`AppsScreen.kt`) upgrades `http://` to `https://` and refuses any other scheme or malformed URL
   (default icon shown instead), and `imageOkHttpClient` now has `followSslRedirects(false)` so an

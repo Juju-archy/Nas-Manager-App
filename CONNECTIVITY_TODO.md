@@ -1,7 +1,8 @@
 # Server connectivity — tracking
 
 Context: the login form accepts a TrueNAS address over HTTP or HTTPS, and authenticates against
-the TrueNAS Scale REST API. This file tracks what's covered, tested, and what not to forget before
+the TrueNAS Scale API (WebSocket JSON-RPC `/api/current` since 1.3.0, REST `/api/v2.0` before —
+see "WebSocket JSON-RPC migration" below). This file tracks what's covered, tested, and what not to forget before
 production.
 
 ## Authentication
@@ -23,11 +24,55 @@ with its famous `otp_token` and "Returns true/false"). Don't confuse this doc wi
 contract (`openapi.json`) — that's what wasted time here. Another pitfall, this one our own fault:
 always double-check the account used before concluding an auth mechanism doesn't work.
 
-Current architecture: `CredentialsStore` (mutable, in memory, username + password) +
+Architecture until 1.2.2 (**replaced in 1.3.0**, see "WebSocket JSON-RPC migration" below): `CredentialsStore` (mutable, in memory, username + password) +
 an OkHttp `AuthInterceptor` that adds `Authorization: Basic base64(user:pass)`
 (`okhttp3.Credentials.basic`) to every request. `TrueNasAuthRepository.login()` validates the
 credentials with a GET `/api/v2.0/system/info` before storing them in the store. No session cookie
 (`PersistentCookieJar` removed): auth is stateless, every request carries its own credentials.
+
+## WebSocket JSON-RPC migration (1.3.0, issue #6)
+
+TrueNAS deprecated the REST API in 25.04 and removes it in TrueNAS 27. naorleizer's branch
+`pr/jsonrpc-migration` (fork `naorleizer/Nas-Manager-App`, 10 commits on top of 1.2.1) was ported by
+hand onto 1.2.2 — method map and wire contract in `WS_MIGRATION.md`.
+
+Current architecture: `TrueNasRpcClient` keeps one WebSocket per session (`wss://host:port/api/current`,
+`ws://` for an `http://` address, `TrueNasUrl.deriveWebSocketUri`), authenticated once with
+`auth.login_ex` (`PASSWORD_PLAIN`, or `API_KEY_PLAIN` first for a key-shaped secret — never over
+`ws://`), lazy reconnect with exponential backoff (1s → 30s) and re-auth from `CredentialsStore`.
+A refused re-auth clears the credentials and signs the dashboard out (`authRejected`).
+`AuthInterceptor` is gone.
+
+Silent regressions of 1.2.2 behavior found while porting (none showed up as a merge conflict),
+all fixed and locked by `LocalNetworkRegressionTest`:
+- The client turned every `IOException` into a `DashboardApiException` without a cause, so the
+  dashboard's local network check (`flagLocalServerUnreachable`) never matched: the notice would
+  never have shown. The cause is now kept (also for errors raised during the backoff), and the
+  repository walks the cause chain (`networkCauseOf`).
+- A call timing out before the socket was even open (what a LAN connection silently dropped by
+  Android 17 looks like) was reported as "didn't respond in time" — now "Couldn't reach the
+  server" with a `SocketTimeoutException` cause.
+- After the permission was granted, the immediate system info retry would have failed from the
+  reconnect backoff — `getSystemInfo()` (never polled) now calls `allowImmediateRetry()`.
+- `versionCode` merged to 6 with no conflict (both sides used 6) — 1.3.0 is 7.
+
+Supported servers: only verified against TrueNAS 25.10 (`boot.environment.query` and two other
+methods were renamed in 25.10). Servers without `/api/current` (24.10 and older) can no longer log in.
+
+Tests to do (manual, on device/emulators):
+- [ ] Login over `https://` (password), then dashboard, graphs, pool/disk detail, alerts (+ dismiss),
+  apps (update, start/stop), System (+ service start/stop and "start automatically").
+- [ ] Login with an API key pasted in the password field over `https://`; refused over `http://`.
+- [ ] Login over `http://` with the consent checkbox.
+- [ ] Wrong password → "Invalid username or password."; 2FA account → specific message.
+- [ ] "Stay logged in": kill and relaunch → dashboard comes back without re-login.
+- [ ] Password changed on the TrueNAS side while logged in → back to the login screen (no silent
+  retry loop).
+- [ ] NAS rebooted / Wi-Fi off then on while on the dashboard → recovers on its own within ~30s.
+- [ ] Android 17 (API 37) without the local network permission: login notice, then dashboard
+  notice on a restored session, system info reloaded right after granting.
+- [ ] Android 15/16 (API 35/36): no permission dialog or notice, everything else as above.
+- [ ] No more REST deprecation warning in the TrueNAS web UI.
 
 ## "Stay logged in" is unavailable over HTTP
 
@@ -194,7 +239,8 @@ https://developer.android.com/privacy-and-security/local-network-permission. Int
   entry point (a new screen, a direct OkHttp call bypassing `TrueNasAuthRepository`) must go
   through this same consent, otherwise cleartext becomes open again with no guard at all, not even
   a warning.
-- **Basic Auth sends `base64(user:pass)` on every request** — this isn't encryption, just
+- **(Before 1.3.0) Basic Auth sent `base64(user:pass)` on every request; since 1.3.0 the password is
+  sent once per WebSocket connection (`auth.login_ex`), still in clear text over `ws://`** — this isn't encryption, just
   trivially reversible encoding; over HTTP, all the protection therefore comes down to the user
   having explicitly accepted this risk. This password is the same one used to log in (often the
   TrueNAS web UI's admin account), unlike an old-style API key, a dedicated secret revocable

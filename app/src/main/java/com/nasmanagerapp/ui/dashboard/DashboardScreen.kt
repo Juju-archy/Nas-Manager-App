@@ -108,6 +108,11 @@ fun DashboardRoute(
         if (localNetwork.isGranted && uiState.systemInfoLocalServerUnreachable) viewModel.retryLoadSystemInfo()
     }
 
+    // The server refused the stored credentials on a reconnect: sign out instead of retrying silently.
+    LaunchedEffect(uiState.signedOut) {
+        if (uiState.signedOut) onLogout()
+    }
+
     // Mirrors the onBack callback of whichever nested screen is currently shown, so the system
     // back gesture/button steps back through the drawer navigation instead of closing the app.
     // Only enabled away from the true root (drawer closed, no screen open), so back still exits
@@ -657,13 +662,13 @@ private fun DashboardScreenPreview() {
             uiState = DashboardUiState(
                 systemInfo = SystemInfo(
                     hostname = "truenas",
-                    version = "25.10.5",
-                    model = "Intel(R) Core(TM) i3-4160 CPU @ 3.60GHz",
-                    manufacturer = "Gigabyte Technology Co., Ltd.",
+                    version = "25.10.0",
+                    model = "Example CPU @ 3.00GHz",
+                    manufacturer = "Example Manufacturer",
                     physicalCores = 2,
                     logicalCores = 4,
-                    totalMemoryBytes = 16_664_072_192,
-                    uptimeSeconds = 2_784_052.0,
+                    totalMemoryBytes = 17_179_869_184,
+                    uptimeSeconds = 2_592_000.0,
                     loadAverage1m = 0.31,
                     loadAverage5m = 0.39,
                     loadAverage15m = 0.33,
@@ -672,25 +677,25 @@ private fun DashboardScreenPreview() {
                 pools = listOf(
                     PoolSummary(
                         id = 1,
-                        name = "Miyota",
+                        name = "tank",
                         status = "ONLINE",
                         healthy = true,
                         statusDetail = null,
-                        sizeBytes = 996_432_412_672,
-                        allocatedBytes = 631_483_105_280,
-                        freeBytes = 364_949_307_392,
-                        fragmentationPercent = 9,
+                        sizeBytes = 1_000_000_000_000,
+                        allocatedBytes = 600_000_000_000,
+                        freeBytes = 400_000_000_000,
+                        fragmentationPercent = 10,
                     ),
                     PoolSummary(
                         id = 2,
-                        name = "Omega",
+                        name = "backup",
                         status = "ONLINE",
                         healthy = true,
                         statusDetail = null,
-                        sizeBytes = 7_988_639_170_560,
-                        allocatedBytes = 1_571_882_328_064,
-                        freeBytes = 6_416_756_842_496,
-                        fragmentationPercent = 6,
+                        sizeBytes = 8_000_000_000_000,
+                        allocatedBytes = 1_600_000_000_000,
+                        freeBytes = 6_400_000_000_000,
+                        fragmentationPercent = 5,
                     ),
                 ),
                 isLoadingPools = false,
@@ -698,7 +703,7 @@ private fun DashboardScreenPreview() {
                     cpuTotalPercent = 12.0,
                     cpuPerCorePercent = listOf(8.0, 15.0, 22.0, 4.0),
                     memoryAvailableBytes = 3_600_000_000,
-                    zfsArcSizeBytes = 6_483_481_000,
+                    zfsArcSizeBytes = 6_000_000_000,
                 ),
             ),
             fallbackTitle = "192.168.*.*",

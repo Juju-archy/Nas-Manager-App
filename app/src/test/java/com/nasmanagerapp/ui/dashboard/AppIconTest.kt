@@ -12,9 +12,9 @@ class AppIconTest {
 
     @Test
     fun `detects svg from content type`() {
-        assertTrue(isSvgIcon("image/svg+xml", "https://media.sys.truenas.net/apps/jellyfin/icons/icon.svg"))
+        assertTrue(isSvgIcon("image/svg+xml", "https://media.sys.truenas.net/apps/example-svg/icons/icon.svg"))
         assertTrue(isSvgIcon("image/svg+xml; charset=utf-8", "https://example.com/icon"))
-        assertFalse(isSvgIcon("image/png", "https://media.sys.truenas.net/apps/plex/icons/icon.png"))
+        assertFalse(isSvgIcon("image/png", "https://media.sys.truenas.net/apps/example-png/icons/icon.png"))
     }
 
     @Test
@@ -40,12 +40,12 @@ class AppIconTest {
     }
 
     @Test
-    fun `subsamples real catalog icon sizes down to about the displayed size`() {
+    fun `subsamples typical catalog icon sizes down to about the displayed size`() {
         val target = 110 // 40dp at xxhdpi
-        assertEquals(8, iconSampleSize(1024, 1024, target)) // qbittorrent → 128 px
-        assertEquals(8, iconSampleSize(900, 900, target)) // plex → 112 px
-        assertEquals(1, iconSampleSize(120, 178, target)) // firefly-iii, already small
-        assertEquals(1, iconSampleSize(64, 64, target)) // vaultwarden, never upscaled
+        assertEquals(8, iconSampleSize(1024, 1024, target)) // 1024 px icon → 128 px
+        assertEquals(8, iconSampleSize(900, 900, target)) // 900 px icon → 112 px
+        assertEquals(1, iconSampleSize(120, 178, target)) // already small
+        assertEquals(1, iconSampleSize(64, 64, target)) // never upscaled
     }
 
     @Test
@@ -56,15 +56,15 @@ class AppIconTest {
 
     @Test
     fun `keeps an https icon url as is`() {
-        val url = "https://media.sys.truenas.net/apps/plex/icons/icon.png"
+        val url = "https://media.sys.truenas.net/apps/example-png/icons/icon.png"
         assertEquals(url, httpsIconUrl(url))
     }
 
     @Test
     fun `upgrades an http icon url to https`() {
         assertEquals(
-            "https://media.sys.truenas.net/apps/plex/icons/icon.png?v=2",
-            httpsIconUrl("http://media.sys.truenas.net/apps/plex/icons/icon.png?v=2"),
+            "https://media.sys.truenas.net/apps/example-png/icons/icon.png?v=2",
+            httpsIconUrl("http://media.sys.truenas.net/apps/example-png/icons/icon.png?v=2"),
         )
     }
 

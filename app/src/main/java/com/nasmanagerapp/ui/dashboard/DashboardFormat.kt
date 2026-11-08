@@ -51,8 +51,8 @@ internal fun formatEpochSeconds(epochSeconds: Long): String =
         .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US))
 
 /**
- * Formats a KiB/s rate (the `disk` reporting graph's unit — curl-verified via `GET
- * /reporting/graphs`'s `vertical_label: "Kibibytes/s"`) as a fixed MiB/s value (not auto-scaled
+ * Formats a KiB/s rate (the `disk` reporting graph's unit — curl-verified via
+ * `reporting.netdata_graphs`'s `vertical_label: "Kibibytes/s"`) as a fixed MiB/s value (not auto-scaled
  * like [formatBytes]), e.g. `12.34 MiB/s` — used for the per-disk I/O graphs, where a single fixed
  * unit across the whole chart reads better than switching units between small and large values.
  */

@@ -5,20 +5,25 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
 
 ## Architecture
 
-- **Network**: OkHttp + Gson, manual REST calls to `/api/v2.0/...` (no Retrofit). The authenticated
-  `OkHttpClient` (`TrueNasApplication.okHttpClient`) carries an `AuthInterceptor` that adds auth to
-  every request; a second, separate `imageOkHttpClient` (no interceptor) is used only for app icons
-  served by a public CDN, so the NAS credentials are never sent there, and only over HTTPS (`http://`
-  icon URLs upgraded, scheme-switching redirects refused) — see `APPS_TODO.md`. Icons
-  are PNG/JPEG (`BitmapFactory`) or SVG (AndroidSVG, internal XML entities disabled app-wide in
-  `TrueNasApplication.onCreate`), with a bounded download and decode size (`AppsScreen.kt`).
-- **Auth**: Basic Auth (`Authorization: Basic base64(user:pass)`), no API key or session cookie —
-  TrueNAS Scale has no `/auth/login` REST route. `CredentialsStore` keeps the credentials in
-  memory; `TrueNasAuthRepository.login()` validates them via a GET `/api/v2.0/system/info` before
-  storing them there. `SessionPreferences` (AES-GCM, key in the Android Keystore — no crypto
-  library, see `CONNECTIVITY_TODO.md`) persists them if "Stay logged in" is checked. "Stay
-  logged in" is unavailable for an `http://` address (checkbox disabled in `LoginScreen`,
-  guarded again in `LoginViewModel` and on restore in
+- **Network**: OkHttp WebSocket + Gson, JSON-RPC 2.0 calls to `/api/current` (no Retrofit; method
+  map in `WS_MIGRATION.md`). `TrueNasRpcClient` keeps one authenticated socket per session (lazy
+  connect, exponential-backoff reconnect, re-auth from `CredentialsStore`); the shared
+  `OkHttpClient` (`TrueNasApplication.okHttpClient`) has `pingInterval(20s)`; a second, separate
+  `imageOkHttpClient` (no auth) is used only for app icons served by a public CDN, so the NAS
+  credentials are never sent there, and only over HTTPS (`http://` icon URLs upgraded,
+  scheme-switching redirects refused) — see `APPS_TODO.md`. Icons are PNG/JPEG (`BitmapFactory`)
+  or SVG (AndroidSVG, internal XML entities disabled app-wide in `TrueNasApplication.onCreate`),
+  with a bounded download and decode size (`AppsScreen.kt`).
+- **Auth**: `auth.login_ex` on the WebSocket (`API_KEY_PLAIN` first when the secret looks like an API key —
+  refused outright over `ws://`, then a `PASSWORD_PLAIN` fallback —, else `PASSWORD_PLAIN`), followed
+  by `core.set_options {legacy_jobs:false}`. If a reconnect's re-auth is refused, the client backs off,
+  clears the credentials and raises `authRejected`, which signs the dashboard out.
+  `CredentialsStore` keeps username + secret in memory (needed to re-auth on reconnect);
+  `TrueNasAuthRepository.login()` opens the session and stores them only once accepted.
+  `SessionPreferences` (AES-GCM, key in the Android Keystore — no crypto library, see
+  `CONNECTIVITY_TODO.md`) persists them if "Stay logged in" is checked. "Stay logged in" is
+  unavailable for an `http://` address (checkbox disabled in `LoginScreen`, guarded again in
+  `LoginViewModel` and on restore in
   `TrueNasApplication.onCreate`, via the shared `TrueNasUrl.isHttp` helper) — see
   `CONNECTIVITY_TODO.md`.
 - **Local network permission** (`ui/LocalNetworkAccess.kt`): Android 17 blocks LAN connections of
@@ -27,7 +32,10 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   `hasLocalNetworkAccess()` (true before API 37, where the permission doesn't exist); a notice with
   "Allow access"/"Open settings" appears on the login screen or the dashboard when a server on the
   local network (`isLocalNetworkHost`) is unreachable while it's missing — see
-  `CONNECTIVITY_TODO.md`.
+  `CONNECTIVITY_TODO.md`. **Careful** over JSON-RPC: `TrueNasRpcClient` turns network failures into
+  `DashboardApiException`, which must keep the original `IOException` as its cause (and a call
+  timing out before the socket is even open counts as unreachable) — otherwise the dashboard
+  notice silently never shows. Locked by `LocalNetworkRegressionTest`.
 - **Unencrypted HTTP**: allowed to any address (IP or hostname), but only after the user's explicit
   consent (checkbox in `LoginScreen`, `acceptHttpRisks` parameter re-checked in
   `TrueNasAuthRepository.login()`). No filtering by IP range — see `CONNECTIVITY_TODO.md` for the
@@ -63,19 +71,19 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
 - **Apps** (`AppsScreen.kt`): screen reachable from the drawer, lists `app.query` (loaded on open,
   not polled) with an "Update" button per app (`app.upgrade`, a middleware job polled via
   `core.get_jobs` to completion) and "Update All" (same mechanism run in parallel across every app
-  with an update available), plus a per-app status dot + Start/Stop button (`app.start`/`app.stop`, same
+  with an update available), plus a per-app Start/Stop button (`app.start`/`app.stop`, same
   job mechanism; tinted square icon so it isn't mistaken for "Update", Stop confirmed by a dialog). No CPU/Memory/Network/Block I/O per app — these metrics only exist as
-  WebSocket events on the TrueNAS side (`app.stats`/`container.metrics`), not over REST, and this
-  app is REST-only. "Discover Apps" is only a placeholder for now (the `catalog.apps` catalog is
+  WebSocket events on the TrueNAS side (`app.stats`/`container.metrics`), not as plain calls, and
+  this app doesn't subscribe to them. "Discover Apps" is only a placeholder for now (the `catalog.apps` catalog is
   ~800 KB). Full detail in `APPS_TODO.md`.
 - **System** (`SystemScreen.kt`): screen reachable from the drawer, four sections loaded
   together on open + manual refresh (not polled) — General settings (`system.general`), Network
   (`network.configuration` + `interface`), Boot (`boot.get_state` + `boot.environment`, exposed
-  over REST under `/boot/environment/query`) and Services (`service.query`). The first three are
+  as `boot.environment.query`) and Services (`service.query`). The first three are
   display only (no editing timezone, network, activating a boot environment). Services has
   "Running"/"Start automatically" switches per service, applied only by a "Save modifications"
   button pinned to the bottom of the screen (`service.start`/`stop`, synchronous, and
-  `PUT /service/id/{id}`); unsaved edits are dropped when leaving the screen. Full detail in
+  `service.update`); unsaved edits are dropped when leaving the screen. Full detail in
   `SYSTEM_TODO.md`.
 
 ## Tracking files
@@ -107,6 +115,23 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
 - Convention going forward: if a new TrueNAS feature (shares, snapshots, VMs...) needs similar
   tracking, create a dedicated file of the same kind (`XXX_TODO.md`) rather than growing an
   existing file scoped to something else.
+
+## No real server data in the repo (public)
+
+The repository is public. Never write data from the user's own TrueNAS into any committed file —
+code, tests, `@Preview`s, `*_TODO.md`, README, fastlane metadata, commit messages. That includes:
+pool/dataset names, hostnames, installed app names, hardware (CPU/motherboard model, RAM size,
+disk models/serials), real IPs/domains/ports, usernames, alert ids/texts, sizes and other values
+copied from a live response, and of course API keys/passwords.
+
+- Use placeholders instead: pools `tank`/`backup`, apps `example-app`/`other-app`/`app-a`...,
+  `Example CPU`/`Example Manufacturer`, IPs from the documentation ranges (`192.0.2.x`,
+  `198.51.100.x`, `203.0.113.x`) or `192.168.1.10` as in the README, uuids
+  `00000000-0000-4000-8000-00000000000N`, round numbers for sizes.
+- When a test or doc reproduces a live response, keep its *shape* (fields, types, formats) and say
+  values are placeholders — never claim "every value is real".
+- Describing that a check was done live (date, method, outcome) is fine; the values seen are not.
+- Before finishing, grep the changed files for any real name/value seen during the session.
 
 ## Tests
 

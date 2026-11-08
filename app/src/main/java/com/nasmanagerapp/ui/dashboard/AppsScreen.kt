@@ -72,14 +72,15 @@ import okio.BufferedSource
  * Apps screen, reachable from the drawer's "Apps" entry — lists installed apps
  * ([DashboardViewModel.loadApps]/[DashboardRepository.getApps]), with a per-app "Update"
  * action and a bulk "Update All" button (both go through [DashboardViewModel.upgradeApp], a real
- * middleware job polled to completion — see `APPS_TODO.md`), plus a per-app status dot and Start/Stop button
+ * middleware job polled to completion — see `APPS_TODO.md`), plus a per-app Start/Stop button
  * ([DashboardViewModel.setAppRunning], same job mechanism). No CPU/Block I/O/Network columns:
  * those only exist as WebSocket subscription events server-side (curl-verified, see
- * `APPS_TODO.md`), and this app is REST-only.
+ * `APPS_TODO.md`); nothing here subscribes to them.
  *
  * "Discover Apps" only opens a placeholder for now ([AppsDiscoverScreen]) — the real catalog
- * (`POST /api/v2.0/catalog/apps`) is a ~800KB payload across 5 trains, browsing/installing from it
- * is a separate, much bigger feature than what was asked here.
+ * (`catalog.apps`, over JSON-RPC) is a ~800KB
+ * payload across 5 trains, browsing/installing from it is a separate, much bigger feature than
+ * what was asked here.
  */
 @Composable
 fun AppsRoute(
@@ -288,9 +289,13 @@ private fun AppRow(
                     )
                 }
             }
-            Row(modifier = Modifier.weight(0.9f), verticalAlignment = Alignment.CenterVertically) {
-                AppStateDot(app.state)
-                Spacer(Modifier.width(10.dp))
+            // No visual state indicator: the Start/Stop button already says which way the app is.
+            // The full state stays available to screen readers.
+            val stateLabel = appStateLabel(app.state)
+            Row(
+                modifier = Modifier.weight(0.9f).semantics { contentDescription = stateLabel },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 AppRunToggle(
                     state = app.state,
                     isSwitching = isSwitching,
@@ -314,7 +319,7 @@ private fun AppRow(
 }
 
 /**
- * "■"/"▶" button next to the status dot — mirrors the TrueNAS web
+ * "■"/"▶" button in the Status column — mirrors the TrueNAS web
  * UI: Stop for a running or deploying app, Start for a stopped or crashed one, nothing while it's
  * already stopping (or unknown). Stopping goes through a confirmation dialog in [AppsScreen],
  * starting doesn't (harmless). Deliberately a different shape from the "Update" button next to
@@ -349,23 +354,14 @@ internal fun canStartApp(state: AppState): Boolean = state == AppState.STOPPED |
 
 internal fun canStopApp(state: AppState): Boolean = state == AppState.RUNNING || state == AppState.DEPLOYING
 
-/**
- * Green dot when running, red otherwise — the text label was dropped since the Start/Stop button
- * already says which way the app is; the full state stays available to screen readers.
- */
-@Composable
-private fun AppStateDot(state: AppState) {
-    val label = when (state) {
-        AppState.RUNNING -> "Running"
-        AppState.STOPPED -> "Stopped"
-        AppState.DEPLOYING -> "Deploying"
-        AppState.STOPPING -> "Stopping"
-        AppState.CRASHED -> "Crashed"
-        AppState.UNKNOWN -> "Unknown state"
-    }
-    Box(modifier = Modifier.semantics { contentDescription = label }) {
-        StatusDot(healthy = state == AppState.RUNNING)
-    }
+/** The app's state as read by screen readers on the Status cell (nothing is shown for it visually). */
+private fun appStateLabel(state: AppState): String = when (state) {
+    AppState.RUNNING -> "Running"
+    AppState.STOPPED -> "Stopped"
+    AppState.DEPLOYING -> "Deploying"
+    AppState.STOPPING -> "Stopping"
+    AppState.CRASHED -> "Crashed"
+    AppState.UNKNOWN -> "Unknown state"
 }
 
 /**
@@ -406,8 +402,8 @@ private fun AppIcon(url: String?) {
 }
 
 /**
- * The catalog CDN serves icons as PNG/JPEG *or* SVG depending on the app (e.g. `plex` → `icon.png`,
- * `jellyfin` → `icon.svg`) — [android.graphics.BitmapFactory] only decodes raster formats, so SVGs
+ * The catalog CDN serves icons as PNG/JPEG *or* SVG depending on the app (`icon.png` for some,
+ * `icon.svg` for others) — [android.graphics.BitmapFactory] only decodes raster formats, so SVGs
  * are rasterized via AndroidSVG at [sizePx] instead.
  *
  * The icon URL comes from the NAS (rewritable on the wire over `http://`, arbitrary for a custom
@@ -486,7 +482,7 @@ internal fun renderSvg(bytes: ByteArray, sizePx: Int): Bitmap {
     if (svg.documentViewBox == null && svg.documentWidth > 0 && svg.documentHeight > 0) {
         svg.setDocumentViewBox(0f, 0f, svg.documentWidth, svg.documentHeight)
     }
-    // A root width/height (e.g. Immich's `width="590"`) would otherwise be drawn at that size instead
+    // A root width/height (e.g. `width="590"`) would otherwise be drawn at that size instead
     // of the viewport, leaving only the drawing's top-left corner in the bitmap.
     svg.setDocumentWidth("100%")
     svg.setDocumentHeight("100%")

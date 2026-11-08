@@ -25,17 +25,16 @@ same moment):
   handled by `epochSecondsFromTrueNasDate`).
 - `args` varies wildly in shape depending on `klass` (object, string, or `null`) — not parsed,
   `formatted` is enough since it has already substituted everything.
-- The endpoint is indeed the deprecated REST gateway (`/api/v2.0/...`), not the JSON-RPC/WebSocket
-  documented by `api.truenas.com` — consistent with the rest of the app (see
-  `CONNECTIVITY_TODO.md`), and API-key auth works as `Authorization: Bearer <key>` on this gateway.
+- At the time, this was verified on the deprecated REST gateway (`/api/v2.0/...`); since 1.3.0
+  the app calls `alert.list`/`alert.dismiss` over the JSON-RPC WebSocket (`/api/current`, see
+  `WS_MIGRATION.md`), authenticated with `auth.login_ex`.
 - The 5 returned alerts all had `dismissed: false` on the first call — **confirmed while testing
   the Dismiss button (below)** that `alert/list` does include already-dismissed alerts
   (`dismissed: true` in the response), so client-side filtering (`extractAlerts`) is necessary, not
   just a precaution.
 
-Full payload (for reference, with the real uuids/dates/text) archived in the unit tests
-(`DashboardRepositoryTest.kt`, test `parses and maps a real GET api v2_0 alert list response...`),
-not only described here.
+Payload shape archived in the unit tests (`DashboardRepositoryTest.kt`, test `parses and maps an
+alert list response...`), with ids, names and addresses replaced by placeholders.
 
 ## Dismiss — verified live (2026-08-29, same session)
 
@@ -49,7 +48,7 @@ implementation (same server and same throwaway key as above, revoked since):
   **the raw JSON string**: `-d '"<uuid>"'` → `200`, body `null`. Meaning `gson.toJson(id)`
   (a plain Kotlin `String`) already produces exactly the right body — see `postRaw` in
   `DashboardRepository.kt`.
-- Tested end-to-end on a real, low-criticality alert (a "PoolUpgraded" notice for Miyota):
+- Tested end-to-end on a real, low-criticality alert (a "PoolUpgraded" notice for a pool):
   dismiss → confirmed `dismissed: true` via a fresh `GET /alert/list` → then restored with
   `POST /api/v2.0/alert/restore` (same body format, also verified) to put the system back in the
   state the user had left it in.
