@@ -22,7 +22,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -59,8 +58,11 @@ class TrueNasRpcClient(
     @Volatile
     private var retryNotBeforeMillis = 0L
 
-    /** Why the last connect attempt failed, kept as the cause of the errors raised during its backoff. */
-    private var lastConnectFailure: IOException? = null
+    /**
+     * Why the last connect attempt failed (an [IOException] or a [ProxyRejectedException]), kept
+     * for the errors raised during its backoff.
+     */
+    private var lastConnectFailure: Exception? = null
 
     private val _authRejected = MutableStateFlow(false)
 
@@ -73,17 +75,18 @@ class TrueNasRpcClient(
 
     /**
      * Opens a fresh session on [uri] authenticated as [username]/[secret] (password, or an API key
-     * pasted in its place). Replaces any existing session. Network errors propagate as
-     * [IOException]s (e.g. `SSLHandshakeException`); a refusal is a [TrueNasAuthFailedException].
+     * pasted in its place), going through the reverse proxy with [proxyAuth]. Replaces any existing
+     * session. Network errors propagate as [IOException]s (e.g. `SSLHandshakeException`); a
+     * refusal is a [TrueNasAuthFailedException], or a [ProxyRejectedException] from the proxy.
      */
-    suspend fun login(uri: String, username: String, secret: String) {
+    suspend fun login(uri: String, username: String, secret: String, proxyAuth: ProxyAuth = ProxyAuth.None) {
         connectLock.withLock {
             session?.close()
             session = null
             consecutiveFailures = 0
             retryNotBeforeMillis = 0L
             lastConnectFailure = null
-            session = openAuthenticated(uri, username, secret)
+            session = openAuthenticated(uri, username, secret, proxyAuth)
             _authRejected.value = false
         }
     }
@@ -134,6 +137,9 @@ class TrueNasRpcClient(
             throw DashboardApiException(e.message ?: "Unknown error.")
         } catch (e: TrueNasAuthFailedException) {
             throw DashboardApiException(e.message ?: "Authentication failed.")
+        } catch (e: ProxyRejectedException) {
+            // No cause on purpose: the server was reached, so no local network notice.
+            throw DashboardApiException(e.message ?: "Access refused by the reverse proxy.")
         } catch (e: IOException) {
             Log.w(TAG, "call '$method' failed: ${e.javaClass.name}: ${e.message}")
             throw DashboardApiException("Couldn't reach the server.", e)
@@ -151,9 +157,14 @@ class TrueNasRpcClient(
             throw DashboardApiException("Not signed in.")
         }
         val now = System.currentTimeMillis()
-        if (now < retryNotBeforeMillis) throw DashboardApiException("Couldn't reach the server.", lastConnectFailure)
+        if (now < retryNotBeforeMillis) {
+            when (val failure = lastConnectFailure) {
+                is ProxyRejectedException -> throw DashboardApiException(failure.message ?: "Access refused by the reverse proxy.")
+                else -> throw DashboardApiException("Couldn't reach the server.", failure)
+            }
+        }
         try {
-            openAuthenticated(uri, username, secret).also {
+            openAuthenticated(uri, username, secret, credentialsStore.proxyAuth).also {
                 session = it
                 consecutiveFailures = 0
                 lastConnectFailure = null
@@ -163,7 +174,14 @@ class TrueNasRpcClient(
             scheduleRetryBackoff()
             credentialsStore.username = null
             credentialsStore.password = null
+            credentialsStore.proxyAuth = ProxyAuth.None
             _authRejected.value = true
+            throw e
+        } catch (e: ProxyRejectedException) {
+            // Not a sign-out: the proxy may only be refusing for a while (or showing a login page
+            // after a config change); retried with backoff like a network failure.
+            lastConnectFailure = e
+            scheduleRetryBackoff()
             throw e
         } catch (e: IOException) {
             lastConnectFailure = e
@@ -186,16 +204,27 @@ class TrueNasRpcClient(
         retryNotBeforeMillis = System.currentTimeMillis() + backoff
     }
 
-    private suspend fun openAuthenticated(uri: String, username: String, secret: String): Session {
+    private suspend fun openAuthenticated(uri: String, username: String, secret: String, proxyAuth: ProxyAuth): Session {
+        // Like an API key, reverse proxy credentials must never travel in clear text.
+        if (proxyAuth != ProxyAuth.None && isCleartext(uri)) {
+            throw TrueNasAuthFailedException(
+                "Reverse proxy credentials can't be used over an unencrypted (http://) connection. Use HTTPS."
+            )
+        }
+        proxyAuth.proxyAuthError()?.let { throw TrueNasAuthFailedException(it) }
         val opened = CompletableDeferred<Unit>()
         val newSession = Session(gson, opened)
-        val socket = okHttpClient.newWebSocket(Request.Builder().url(uri).build(), newSession)
+        val socket = okHttpClient.newWebSocket(handshakeRequest(uri, proxyAuth), newSession)
         newSession.socket = socket
         try {
             // withTimeoutOrNull: only this step's own deadline yields null (a connect failure,
             // IOException); a caller's enclosing call() timeout still propagates as cancellation.
-            withTimeoutOrNull(connectTimeoutMillis) { opened.await() }
-                ?: throw IOException("Connection timed out.")
+            try {
+                withTimeoutOrNull(connectTimeoutMillis) { opened.await() }
+                    ?: throw IOException("Connection timed out.")
+            } catch (e: HandshakeRejectedException) {
+                throw ProxyRejectedException(e.httpCode, proxyRejectionMessage(e.httpCode, proxyAuth != ProxyAuth.None))
+            }
             withTimeoutOrNull(DEFAULT_TIMEOUT_MILLIS) {
                 authenticate(newSession, uri, username, secret)
                 try {
@@ -365,9 +394,18 @@ class TrueNasRpcClient(
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             Log.d(TAG, "WS onFailure: ${t.javaClass.name}: ${t.message} response=${response?.code ?: "-"}")
-            fail(t)
+            // An HTTP response before onOpen means the handshake itself was answered with
+            // something other than "101 Switching Protocols" (proxy refusal, login page...).
+            if (response != null && !opened.isCompleted && response.code != 101) {
+                fail(HandshakeRejectedException(response.code))
+            } else {
+                fail(t)
+            }
         }
     }
+
+    /** The handshake got a plain HTTP response ([httpCode]); turned into a [ProxyRejectedException]. */
+    private class HandshakeRejectedException(val httpCode: Int) : Exception("HTTP $httpCode")
 
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 15_000L

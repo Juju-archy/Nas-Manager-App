@@ -70,11 +70,13 @@ class TrueNasApplication : Application() {
         if (shouldRestoreSession(sessionPreferences.isLoggedIn, sessionPreferences.serverUrl)) {
             credentialsStore.username = sessionPreferences.username
             credentialsStore.password = sessionPreferences.password
+            credentialsStore.proxyAuth = sessionPreferences.proxyAuth
         } else if (sessionPreferences.isLoggedIn) {
             // A session saved for an http:// address (older install, or the server was since
             // switched from https to http) must never be auto-restored: it would resend the
             // password automatically, in the clear, on whatever network the device joins next.
             sessionPreferences.password = ""
+            sessionPreferences.proxySecret = ""
             sessionPreferences.isLoggedIn = false
         }
     }

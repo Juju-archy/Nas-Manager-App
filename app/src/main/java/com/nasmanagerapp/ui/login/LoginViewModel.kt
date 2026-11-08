@@ -7,7 +7,10 @@ import com.nasmanagerapp.TrueNasApplication
 import com.nasmanagerapp.data.auth.LocalServerUnreachableException
 import com.nasmanagerapp.data.auth.SessionPreferences
 import com.nasmanagerapp.data.auth.TrueNasAuthRepository
+import com.nasmanagerapp.data.network.ProxyAuth
+import com.nasmanagerapp.data.network.ProxyAuthMode
 import com.nasmanagerapp.data.network.TrueNasUrl
+import com.nasmanagerapp.data.network.proxyAuthError
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +26,9 @@ class LoginViewModel(
         LoginUiState(
             serverUrl = sessionPreferences.serverUrl,
             username = sessionPreferences.username,
+            // Prefilled like the username; the proxy secret, like the password, never is.
+            proxyMode = sessionPreferences.proxyMode,
+            proxyIdentity = sessionPreferences.proxyIdentity,
             // Mirrors the guard in onServerUrlChange: if the prefilled address is already
             // http://, the checkbox must start unchecked, not just disabled.
             rememberMe = !TrueNasUrl.isHttp(sessionPreferences.serverUrl),
@@ -56,6 +62,22 @@ class LoginViewModel(
         _uiState.update { it.copy(acceptHttpRisks = value, errorMessage = null) }
     }
 
+    fun onProxyModeChange(value: ProxyAuthMode) {
+        _uiState.update {
+            // The two fields mean different things in each mode: don't carry a Basic password
+            // over as a Cloudflare secret (or the reverse).
+            if (value == it.proxyMode) it else it.copy(proxyMode = value, proxyIdentity = "", proxySecret = "", errorMessage = null)
+        }
+    }
+
+    fun onProxyIdentityChange(value: String) {
+        _uiState.update { it.copy(proxyIdentity = value, errorMessage = null) }
+    }
+
+    fun onProxySecretChange(value: String) {
+        _uiState.update { it.copy(proxySecret = value, errorMessage = null) }
+    }
+
     fun connect(onSuccess: () -> Unit) {
         val state = _uiState.value
         if (state.isLoading) return
@@ -63,21 +85,30 @@ class LoginViewModel(
         // local network permission dialog — possibly in a process recreated by Android meanwhile,
         // where the password typed before (never persisted) is gone. Never send a request then.
         if (state.serverUrl.isBlank() || state.username.isBlank() || state.password.isBlank()) return
+        // Same reason: the proxy secret typed before may be gone. The repository refuses an
+        // invalid one or one over http:// anyway; this just avoids a pointless round trip.
+        val proxyAuth = state.proxyAuth
+        if (proxyAuth.proxyAuthError() != null) return
 
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            authRepository.login(state.serverUrl, state.username, state.password, state.acceptHttpRisks)
+            authRepository.login(state.serverUrl, state.username, state.password, state.acceptHttpRisks, proxyAuth)
                 .onSuccess {
                     // Server address and username are prefilled on next launch regardless of
                     // "Stay logged in", so an http:// user who can't save the password still
                     // only has to retype that.
                     sessionPreferences.serverUrl = state.serverUrl
                     sessionPreferences.username = state.username
+                    sessionPreferences.proxyMode = state.proxyMode
+                    sessionPreferences.proxyIdentity = if (proxyAuth == ProxyAuth.None) "" else state.proxyIdentity
                     // Defense in depth: never persist the password for an http:// address even
                     // if rememberMe somehow got here as true (the UI already forces it off).
                     if (state.rememberMe && !TrueNasUrl.isHttp(state.serverUrl)) {
                         sessionPreferences.password = state.password
+                        sessionPreferences.proxySecret = if (proxyAuth == ProxyAuth.None) "" else state.proxySecret
                         sessionPreferences.isLoggedIn = true
+                    } else {
+                        sessionPreferences.proxySecret = ""
                     }
                     _uiState.update { it.copy(isLoading = false) }
                     onSuccess()

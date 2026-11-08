@@ -19,6 +19,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
@@ -32,9 +35,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,7 +64,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nasmanagerapp.R
 import com.nasmanagerapp.TrueNasApplication
+import com.nasmanagerapp.data.network.ProxyAuth
+import com.nasmanagerapp.data.network.ProxyAuthMode
 import com.nasmanagerapp.data.network.TrueNasUrl
+import com.nasmanagerapp.data.network.proxyAuthError
+import com.nasmanagerapp.data.network.toProxyAuth
 import com.nasmanagerapp.ui.LocalNetworkAccessNotice
 import com.nasmanagerapp.ui.ProjectInfo
 import com.nasmanagerapp.ui.rememberLocalNetworkAccess
@@ -81,13 +92,23 @@ data class LoginUiState(
      * on any field change).
      */
     val localServerUnreachable: Boolean = false,
+    /** Reverse proxy in front of the NAS (GitHub issue #8), see [ProxyAuth]. */
+    val proxyMode: ProxyAuthMode = ProxyAuthMode.NONE,
+    /** Basic auth user, or Cloudflare Access client ID. */
+    val proxyIdentity: String = "",
+    /** Basic auth password, or Cloudflare Access client secret. */
+    val proxySecret: String = "",
 ) {
-    // Overridden so the password never appears in a log line, crash report, or debugger view that
-    // prints this state via toString() — the default data class toString() would include it as-is.
+    val proxyAuth: ProxyAuth
+        get() = proxyMode.toProxyAuth(proxyIdentity, proxySecret)
+
+    // Overridden so the secrets never appear in a log line, crash report, or debugger view that
+    // prints this state via toString() — the default data class toString() would include them as-is.
     override fun toString(): String =
         "LoginUiState(serverUrl='$serverUrl', username='$username', password='***', " +
             "rememberMe=$rememberMe, acceptHttpRisks=$acceptHttpRisks, isLoading=$isLoading, " +
-            "errorMessage=$errorMessage, localServerUnreachable=$localServerUnreachable)"
+            "errorMessage=$errorMessage, localServerUnreachable=$localServerUnreachable, " +
+            "proxyMode=$proxyMode, proxyIdentity='$proxyIdentity', proxySecret='***')"
 }
 
 @Composable
@@ -119,6 +140,9 @@ fun LoginRoute(onLoginSuccess: () -> Unit, modifier: Modifier = Modifier) {
         onPasswordChange = viewModel::onPasswordChange,
         onRememberMeChange = viewModel::onRememberMeChange,
         onAcceptHttpRisksChange = viewModel::onAcceptHttpRisksChange,
+        onProxyModeChange = viewModel::onProxyModeChange,
+        onProxyIdentityChange = viewModel::onProxyIdentityChange,
+        onProxySecretChange = viewModel::onProxySecretChange,
         onConnectClick = {
             // Asked once, when the user actually tries to reach the NAS, rather than at launch
             // with no context. Afterwards, only from the notice below if the login fails.
@@ -151,16 +175,22 @@ fun LoginScreen(
     onAcceptHttpRisksChange: (Boolean) -> Unit,
     onConnectClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onProxyModeChange: (ProxyAuthMode) -> Unit = {},
+    onProxyIdentityChange: (String) -> Unit = {},
+    onProxySecretChange: (String) -> Unit = {},
     localNetworkNotice: (@Composable () -> Unit)? = null,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
     val isHttp = TrueNasUrl.isHttp(uiState.serverUrl)
+    val usesProxy = uiState.proxyMode != ProxyAuthMode.NONE
 
     val canSubmit = uiState.serverUrl.isNotBlank() &&
         uiState.username.isNotBlank() &&
         uiState.password.isNotBlank() &&
         (!isHttp || uiState.acceptHttpRisks) &&
+        // Reverse proxy credentials: HTTPS only, like an API key.
+        (!usesProxy || (!isHttp && uiState.proxyAuth.proxyAuthError() == null)) &&
         !uiState.isLoading
 
     Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
@@ -251,6 +281,20 @@ fun LoginScreen(
                     },
                 )
 
+                Spacer(Modifier.height(4.dp))
+                ReverseProxySection(
+                    mode = uiState.proxyMode,
+                    identity = uiState.proxyIdentity,
+                    secret = uiState.proxySecret,
+                    inputError = uiState.proxyAuth.proxyAuthError()
+                        // "Fill both fields" is already conveyed by the disabled button.
+                        .takeIf { uiState.proxyIdentity.isNotEmpty() && uiState.proxySecret.isNotEmpty() },
+                    isHttp = isHttp,
+                    onModeChange = onProxyModeChange,
+                    onIdentityChange = onProxyIdentityChange,
+                    onSecretChange = onProxySecretChange,
+                )
+
                 if (isHttp) {
                     Spacer(Modifier.height(12.dp))
                     HttpRiskWarning(
@@ -336,6 +380,118 @@ fun LoginScreen(
                 ProjectInfo()
             }
         }
+    }
+}
+
+/**
+ * Collapsed by default (most users have no authenticating proxy); starts expanded when a mode is
+ * already set, e.g. prefilled from the last login.
+ */
+@Composable
+private fun ReverseProxySection(
+    mode: ProxyAuthMode,
+    identity: String,
+    secret: String,
+    inputError: String?,
+    isHttp: Boolean,
+    onModeChange: (ProxyAuthMode) -> Unit,
+    onIdentityChange: (String) -> Unit,
+    onSecretChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable { mutableStateOf(mode != ProxyAuthMode.NONE) }
+    var secretVisible by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .widthIn(max = 400.dp)
+            .fillMaxWidth(),
+    ) {
+        TextButton(onClick = { expanded = !expanded }) {
+            Icon(
+                imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(if (mode == ProxyAuthMode.NONE) "Reverse proxy (advanced)" else "Reverse proxy (advanced) · on")
+        }
+        if (!expanded) return@Column
+
+        Text(
+            text = "Only if your server is behind an authenticating reverse proxy (Pangolin, " +
+                "Cloudflare Access…). Leave on \"None\" otherwise.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        val options = listOf(
+            ProxyAuthMode.NONE to "None",
+            ProxyAuthMode.BASIC to "Basic auth",
+            ProxyAuthMode.CLOUDFLARE_ACCESS to "Cloudflare",
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, (option, label) ->
+                SegmentedButton(
+                    selected = mode == option,
+                    onClick = { onModeChange(option) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                ) {
+                    Text(label, maxLines = 1)
+                }
+            }
+        }
+
+        if (mode == ProxyAuthMode.NONE) return@Column
+
+        if (isHttp) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Not available over HTTP — these credentials would travel in the clear. " +
+                    "Use an https:// address.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+
+        val isBasic = mode == ProxyAuthMode.BASIC
+        Spacer(Modifier.height(12.dp))
+        LoginTextField(
+            value = identity,
+            onValueChange = onIdentityChange,
+            label = if (isBasic) "Proxy username" else "Client ID",
+            placeholder = if (isBasic) "" else "xxxxxxxx.access",
+            icon = if (isBasic) Icons.Filled.Person else Icons.Filled.Key,
+            keyboardType = KeyboardType.Text,
+        )
+        Spacer(Modifier.height(12.dp))
+        LoginTextField(
+            value = secret,
+            onValueChange = onSecretChange,
+            label = if (isBasic) "Proxy password" else "Client secret",
+            placeholder = "",
+            icon = Icons.Filled.Lock,
+            keyboardType = KeyboardType.Password,
+            visualTransformation = if (secretVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { secretVisible = !secretVisible }) {
+                    Icon(
+                        imageVector = if (secretVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = if (secretVisible) "Hide proxy secret" else "Show proxy secret",
+                    )
+                }
+            },
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = inputError ?: if (isBasic) {
+                "The username and password set on the proxy (e.g. Pangolin's header auth), not your TrueNAS ones."
+            } else {
+                "A Cloudflare Access service token (Zero Trust → Access → Service credentials)."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (inputError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -457,6 +613,28 @@ private fun LoginScreenHttpWarningPreview() {
                 serverUrl = "http://192.168.1.10",
                 username = "admin",
                 rememberMe = false,
+            ),
+            onServerUrlChange = {},
+            onUsernameChange = {},
+            onPasswordChange = {},
+            onRememberMeChange = {},
+            onAcceptHttpRisksChange = {},
+            onConnectClick = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 900, name = "Reverse proxy")
+@Composable
+private fun LoginScreenReverseProxyPreview() {
+    NasManagerAppTheme {
+        LoginScreen(
+            uiState = LoginUiState(
+                serverUrl = "https://nas.example.com",
+                username = "admin",
+                proxyMode = ProxyAuthMode.BASIC,
+                proxyIdentity = "proxy-user",
+                proxySecret = "secret",
             ),
             onServerUrlChange = {},
             onUsernameChange = {},

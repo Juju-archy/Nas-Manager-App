@@ -248,6 +248,68 @@ class TrueNasRpcClientTest {
     }
 
     @Test
+    fun `reverse proxy credentials are never sent over a cleartext connection`() {
+        // MockWebServer is plain http/ws, i.e. cleartext: refused before even opening the socket.
+        try {
+            runBlocking {
+                newClient().login(server.url("/api/current").toString(), "admin", "hunter2", ProxyAuth.Basic("alice", "s3cret"))
+            }
+            fail("expected TrueNasAuthFailedException")
+        } catch (e: TrueNasAuthFailedException) {
+            assertTrue(e.message!!.contains("unencrypted"))
+        }
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `handshake refused by a proxy is a ProxyRejectedException, not a network failure`() {
+        val proxy = MockWebServer()
+        proxy.enqueue(MockResponse().setResponseCode(401))
+        proxy.start()
+        try {
+            try {
+                runBlocking { newClient().login(proxy.url("/api/current").toString(), "admin", "hunter2") }
+                fail("expected ProxyRejectedException")
+            } catch (e: ProxyRejectedException) {
+                assertEquals(401, e.httpCode)
+                assertTrue(e.message!!.contains("reverse proxy"))
+            }
+        } finally {
+            try {
+                proxy.shutdown()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    @Test
+    fun `proxy refusal on reconnect keeps the session and no local network cause`() {
+        val proxy = MockWebServer()
+        proxy.enqueue(MockResponse().setResponseCode(403))
+        proxy.start()
+        try {
+            val credentials = CredentialsStore().apply { username = "admin"; password = "hunter2" }
+            val client = TrueNasRpcClient(OkHttpClient(), credentials, uriProvider = { proxy.url("/api/current").toString() })
+
+            try {
+                runBlocking { client.call("system.info", emptyList(), { it }) }
+                fail("expected DashboardApiException")
+            } catch (e: DashboardApiException) {
+                assertTrue(e.message!!.contains("HTTP 403"))
+                // The server answered: the Android 17 local network notice must not show.
+                assertEquals(false, isServerUnreachable(networkCauseOf(e)))
+            }
+            assertEquals("admin", credentials.username)
+            assertEquals(false, client.authRejected.value)
+        } finally {
+            try {
+                proxy.shutdown()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    @Test
     fun `plain wrong password is not retried as an API key`() {
         authResponseType = { "AUTH_ERR" }
 

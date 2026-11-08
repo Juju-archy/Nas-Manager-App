@@ -3,6 +3,9 @@ package com.nasmanagerapp.data.auth
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.nasmanagerapp.data.network.ProxyAuth
+import com.nasmanagerapp.data.network.ProxyAuthMode
+import com.nasmanagerapp.data.network.toProxyAuth
 import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.util.Base64
@@ -47,6 +50,27 @@ class SessionPreferences(context: Context) {
         get() = read(KEY_PASSWORD) ?: ""
         set(value) = write(KEY_PASSWORD, value)
 
+    /**
+     * Reverse proxy mode and identity (Basic user / Cloudflare client ID), prefilled on next
+     * launch like [username]; the matching secret is in [proxySecret], saved only with
+     * "Stay logged in". See [ProxyAuth].
+     */
+    var proxyMode: ProxyAuthMode
+        get() = ProxyAuthMode.entries.firstOrNull { it.name == read(KEY_PROXY_MODE) } ?: ProxyAuthMode.NONE
+        set(value) = write(KEY_PROXY_MODE, value.name)
+
+    var proxyIdentity: String
+        get() = read(KEY_PROXY_IDENTITY) ?: ""
+        set(value) = write(KEY_PROXY_IDENTITY, value)
+
+    var proxySecret: String
+        get() = read(KEY_PROXY_SECRET) ?: ""
+        set(value) = write(KEY_PROXY_SECRET, value)
+
+    /** The saved reverse proxy credentials, as sent on reconnect. */
+    val proxyAuth: ProxyAuth
+        get() = proxyMode.toProxyAuth(proxyIdentity, proxySecret)
+
     var isLoggedIn: Boolean
         get() = prefs.getBoolean(KEY_LOGGED_IN, false)
         set(value) = prefs.edit().putBoolean(KEY_LOGGED_IN, value).apply()
@@ -85,7 +109,12 @@ class SessionPreferences(context: Context) {
         const val KEY_USERNAME = "username"
         const val KEY_PASSWORD = "password"
         const val KEY_LOGGED_IN = "logged_in"
-        val STRING_KEYS = listOf(KEY_SERVER_URL, KEY_USERNAME, KEY_PASSWORD)
+        const val KEY_PROXY_MODE = "proxy_mode"
+        const val KEY_PROXY_IDENTITY = "proxy_identity"
+        const val KEY_PROXY_SECRET = "proxy_secret"
+        val STRING_KEYS = listOf(
+            KEY_SERVER_URL, KEY_USERNAME, KEY_PASSWORD, KEY_PROXY_MODE, KEY_PROXY_IDENTITY, KEY_PROXY_SECRET,
+        )
 
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
         const val KEY_ALIAS = "nasmanager_session_key"

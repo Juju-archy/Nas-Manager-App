@@ -74,6 +74,62 @@ Tests to do (manual, on device/emulators):
 - [ ] Android 15/16 (API 35/36): no permission dialog or notice, everything else as above.
 - [ ] No more REST deprecation warning in the TrueNAS web UI.
 
+## Reverse proxy authentication (issue #8)
+
+Request: reach the NAS through an authenticating reverse proxy (Pangolin, Cloudflare Access...).
+Their SSO / password / PIN login is browser-only (redirect + cookie), so the app's WebSocket was
+blocked before ever reaching TrueNAS. Since 1.3.0, TrueNAS auth happens *inside* the socket
+(`auth.login_ex`), so the handshake's HTTP headers are free for the proxy.
+
+Design (`ProxyAuth.kt`), chosen over a free-form "header name + value" to spare users building
+the value themselves:
+- Three modes in a collapsed "Reverse proxy (advanced)" section of `LoginScreen`: None / Basic
+  auth (`Authorization: Basic base64(user:password)`, UTF-8 — Pangolin's "header auth",
+  nginx/Traefik/Caddy/HAProxy/Authelia/Authentik basic auth) / Cloudflare Access service token
+  (standard `CF-Access-Client-Id` + `CF-Access-Client-Secret` pair — works with Cloudflare's
+  default config, unlike its single-header JSON mode which needs an API call to enable).
+- Headers sent on the WebSocket handshake only (`handshakeRequest`), on every (re)connection
+  (`CredentialsStore.proxyAuth`). Never on `imageOkHttpClient`.
+- HTTPS only: refused over `ws://` in `TrueNasRpcClient.openAuthenticated`, and the login button
+  stays disabled in the UI.
+- Validated before reaching OkHttp (`proxyAuthError`): `Request.Builder.header` throws on
+  characters a header can't carry. Basic user can't contain `:`.
+- Persistence (`SessionPreferences`, AES-GCM like the rest): mode + identity (Basic user /
+  Cloudflare client ID) always, like the username; the secret only with "Stay logged in". An
+  `http://` session that isn't restored also drops the proxy secret.
+- A handshake answered with plain HTTP (not 101) is a `ProxyRejectedException` with an explicit
+  message (401/403 → "refused by the reverse proxy", other codes → login page / WebSockets
+  blocked / TrueNAS too old). Deliberately **not** an `IOException`: the server was reached, so
+  the Android 17 local network notice must not show. On reconnect it backs off like a network
+  failure but doesn't sign out.
+
+Not covered: browser-based SSO/OIDC, mTLS client certificates, short-lived tokens, `Bearer`
+tokens/custom headers (can be added later as another mode).
+
+Open question: Pangolin forwards `Authorization` to the backend, so TrueNAS sees an
+`Authorization: Basic` with the *proxy* credentials on the handshake. Not verified yet whether
+TrueNAS ignores it on `/api/current` — Cloudflare's `CF-Access-*` headers don't have this issue.
+
+Tests done (2026-11-08, on device, through the user's own nginx reverse proxy with HTTPS and
+basic auth):
+- [x] Mode None → explicit "refused by a reverse proxy (HTTP 401)" message.
+- [x] Basic auth with the right credentials → login and dashboard OK.
+- [x] Basic auth with a wrong proxy password, or a wrong proxy username → login refused with an
+  error.
+- Whether nginx forwarded `Authorization` to TrueNAS during that test wasn't recorded, so the open
+  question above still stands.
+
+Tests to do (manual, need a real proxy):
+- [ ] nginx with `Authorization` explicitly forwarded (Nginx Proxy Manager "Pass Auth to Host" on)
+  → answers the open question above.
+- [ ] Wi-Fi off/on on the dashboard through the proxy → reconnects on its own (header resent).
+- [ ] Pangolin with header auth: login, dashboard, reconnect after Wi-Fi off/on; TrueNAS accepts
+  the forwarded `Authorization` header.
+- [ ] Pangolin with wrong header auth → "The reverse proxy refused its credentials (HTTP 401)".
+- [ ] Pangolin with SSO only (no header auth) → explicit message, not "Couldn't reach the server".
+- [ ] Cloudflare Access with a service token (policy "Service Auth").
+- [ ] "Stay logged in" with a proxy: kill and relaunch → dashboard comes back.
+
 ## "Stay logged in" is unavailable over HTTP
 
 The password persisted by "Stay logged in" (`SessionPreferences`, AES-GCM with an Android Keystore key) is
