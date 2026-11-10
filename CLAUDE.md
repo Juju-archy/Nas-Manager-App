@@ -85,6 +85,12 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   button pinned to the bottom of the screen (`service.start`/`stop`, synchronous, and
   `service.update`); unsaved edits are dropped when leaving the screen. Full detail in
   `SYSTEM_TODO.md`.
+- **Reverse proxy auth** (`data/network/ProxyAuth.kt`, issue #8): optional None / Basic /
+  Cloudflare Access credentials for an authenticating proxy in front of the NAS, sent as headers
+  on the WebSocket handshake only (every reconnect, from `CredentialsStore.proxyAuth`), HTTPS
+  only, never on `imageOkHttpClient`. A non-101 handshake is a `ProxyRejectedException`, which
+  must stay a non-`IOException` so it never triggers the local network notice — see
+  `CONNECTIVITY_TODO.md`.
 
 ## Tracking files
 

@@ -3,6 +3,8 @@ package com.nasmanagerapp.data.auth
 import android.util.Log
 import com.nasmanagerapp.data.dashboard.DashboardApiException
 import com.nasmanagerapp.data.network.CredentialsStore
+import com.nasmanagerapp.data.network.ProxyAuth
+import com.nasmanagerapp.data.network.ProxyRejectedException
 import com.nasmanagerapp.data.network.TrueNasAuthFailedException
 import com.nasmanagerapp.data.network.TrueNasRpcClient
 import com.nasmanagerapp.data.network.TrueNasUrl
@@ -42,6 +44,7 @@ class TrueNasAuthRepository(
         username: String,
         password: String,
         acceptHttpRisks: Boolean,
+        proxyAuth: ProxyAuth = ProxyAuth.None,
     ): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
@@ -64,12 +67,16 @@ class TrueNasAuthRepository(
 
                 // The credentials go into the shared CredentialsStore only once auth.login_ex has
                 // accepted them: they aren't trusted before that.
-                rpcClient.login(uri, username, password)
+                rpcClient.login(uri, username, password, proxyAuth)
                 credentialsStore.username = username
                 credentialsStore.password = password
+                credentialsStore.proxyAuth = proxyAuth
                 Result.success(Unit)
             } catch (e: TrueNasAuthFailedException) {
                 Result.failure(TrueNasApiException(e.message ?: "Invalid username or password."))
+            } catch (e: ProxyRejectedException) {
+                // The server was reached: never a LocalServerUnreachableException.
+                Result.failure(TrueNasApiException(e.message ?: "Access refused by the reverse proxy."))
             } catch (e: DashboardApiException) {
                 Result.failure(TrueNasApiException(e.message ?: "The server responded with an error."))
             } catch (e: SSLHandshakeException) {
@@ -104,5 +111,6 @@ class TrueNasAuthRepository(
         rpcClient.close()
         credentialsStore.username = null
         credentialsStore.password = null
+        credentialsStore.proxyAuth = ProxyAuth.None
     }
 }

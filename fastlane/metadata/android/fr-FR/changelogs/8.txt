@@ -1,0 +1,3 @@
+Nouveautés :
+• Prise en charge des reverse proxys : si votre NAS est derrière un proxy avec authentification, ouvrez « Reverse proxy (advanced) » sur l’écran de connexion et saisissez ses identifiants Basic auth (header auth de Pangolin, nginx, Traefik, Caddy, Authelia…) ou un service token Cloudflare Access. HTTPS uniquement, envoyés seulement à votre serveur
+• Message plus clair quand un proxy refuse la connexion ou affiche sa page de connexion, au lieu de « Couldn't reach the server »

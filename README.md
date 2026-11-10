@@ -46,6 +46,15 @@ graph TB
 
 The app authenticates the WebSocket with **`auth.login_ex`** (`PASSWORD_PLAIN`: TrueNAS username + password), once per connection. If the password field holds something shaped like an API key (`<number>-<16+ chars>`), it is sent as `API_KEY_PLAIN` first (never over unencrypted `ws://`), falling back to `PASSWORD_PLAIN` — so you can paste an API key in the password field. Accounts that require two-factor authentication, lack API access, have expired credentials, or must authenticate on the other controller get a specific message.
 
+### Behind a reverse proxy
+
+If your server is behind an authenticating reverse proxy, open **Reverse proxy (advanced)** on the login screen and pick:
+
+- **Basic auth**: the username and password set on the proxy (not your TrueNAS ones). For Pangolin, enable *header auth* on the TrueNAS resource; also works with nginx, Traefik, Caddy, HAProxy, Authelia or Authentik basic auth.
+- **Cloudflare**: the client ID and secret of a Cloudflare Access service token (Zero Trust → Access → Service credentials), with a *Service Auth* policy on the application.
+
+These credentials are sent only when the connection opens, over HTTPS only, and only to your server. Browser-based logins (SSO, OIDC, PIN page) and client certificates are not supported. The proxy must let WebSockets through.
+
 The WebSocket URL is derived from the typed address: `https://` → `wss://`, `http://` → `ws://`, the port is the one you typed (443/80 by default), path `/api/current`.
 
 Unencrypted HTTP (`ws://`, no certificate) is allowed to any address (IP or hostname), but only after the user has explicitly checked a box accepting the associated risks. HTTPS (`wss://`) remains recommended — see `CONNECTIVITY_TODO.md` for the connection scenarios covered.
