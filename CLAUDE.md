@@ -60,7 +60,9 @@ server: login + near-real-time system dashboard + detailed reporting graphs.
   screen. Entries: current user + Alerts + Logout at the top,
   Dashboard/Storage/Reporting/Apps/System at the bottom (Storage and Reporting reuse the existing
   `GraphTarget.POOLS`/`GraphTarget.CPU` screens, no new dedicated screen — Apps and System have
-  their own, `AppsScreen.kt`/`SystemScreen.kt`). A single `BackHandler` in `DashboardRoute` mirrors
+  their own, `AppsScreen.kt`/`SystemScreen.kt`), then Restart/Shut down (server power actions,
+  confirmed by a dialog — `PowerActionDialogs.kt`, `system.reboot`/`system.shutdown` sent via
+  `TrueNasRpcClient.callDetached` since their reply never comes; see `SYSTEM_TODO.md`). A single `BackHandler` in `DashboardRoute` mirrors
   the current screen's `onBack` (drawer open → Alerts/Apps/System → pool detail → graph → root),
   enabled everywhere except the true root so the system back gesture/button steps back through this
   state instead of closing the app.

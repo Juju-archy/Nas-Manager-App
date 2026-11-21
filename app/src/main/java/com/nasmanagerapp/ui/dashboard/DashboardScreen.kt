@@ -92,6 +92,7 @@ fun DashboardRoute(
     var showAlerts by remember { mutableStateOf(false) }
     var showApps by remember { mutableStateOf(false) }
     var showSystem by remember { mutableStateOf(false) }
+    var confirmPowerAction by remember { mutableStateOf<PowerAction?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
@@ -141,6 +142,20 @@ fun DashboardRoute(
         else -> null
     }
 
+    PowerActionDialogs(
+        serverName = uiState.systemInfo?.hostname?.ifBlank { null } ?: app.sessionPreferences.serverUrl,
+        confirmAction = confirmPowerAction,
+        sendingAction = uiState.sendingPowerAction,
+        sentAction = uiState.sentPowerAction,
+        error = uiState.powerActionError,
+        onConfirm = { action ->
+            confirmPowerAction = null
+            viewModel.requestPowerAction(action)
+        },
+        onCancel = { confirmPowerAction = null },
+        onDismissResult = viewModel::clearPowerActionResult,
+    )
+
     ModalNavigationDrawer(
         modifier = modifier,
         drawerState = drawerState,
@@ -172,6 +187,10 @@ fun DashboardRoute(
                         DrawerDestination.REPORTING -> GraphTarget.CPU
                         DrawerDestination.DASHBOARD, DrawerDestination.APPS, DrawerDestination.SYSTEM -> null
                     }
+                },
+                onPowerAction = { action ->
+                    closeDrawer()
+                    confirmPowerAction = action
                 },
             )
         },

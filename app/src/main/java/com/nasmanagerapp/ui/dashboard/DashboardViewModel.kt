@@ -35,6 +35,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+/** Server power actions offered in the drawer (see `AppDrawer.kt`). */
+enum class PowerAction { RESTART, SHUTDOWN }
+
 data class DashboardUiState(
     val systemInfo: SystemInfo? = null,
     val isLoadingSystemInfo: Boolean = true,
@@ -83,6 +86,11 @@ data class DashboardUiState(
     val servicesError: String? = null,
     val isSavingServices: Boolean = false,
     val serviceSaveErrors: List<String> = emptyList(),
+    /** A restart/shutdown request is being sent. */
+    val sendingPowerAction: PowerAction? = null,
+    /** The server accepted this restart/shutdown request; cleared by [DashboardViewModel.clearPowerActionResult]. */
+    val sentPowerAction: PowerAction? = null,
+    val powerActionError: String? = null,
     /** The stored credentials were refused on a reconnect: the UI should return to the sign-in screen. */
     val signedOut: Boolean = false,
 )
@@ -391,6 +399,33 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
                 )
             }
         }
+    }
+
+    /**
+     * Asks the server to restart or shut down (confirmed beforehand by the drawer's dialog). Only
+     * reports whether the server accepted it: once it's down, the 2s polling fails and then
+     * reconnects on its own after a restart.
+     */
+    fun requestPowerAction(action: PowerAction) {
+        if (_uiState.value.sendingPowerAction != null) return
+        _uiState.update { it.copy(sendingPowerAction = action, sentPowerAction = null, powerActionError = null) }
+        viewModelScope.launch {
+            val result = when (action) {
+                PowerAction.RESTART -> repository.rebootServer()
+                PowerAction.SHUTDOWN -> repository.shutdownServer()
+            }
+            _uiState.update {
+                it.copy(
+                    sendingPowerAction = null,
+                    sentPowerAction = action.takeIf { result.isSuccess },
+                    powerActionError = result.exceptionOrNull()?.let { error -> error.message ?: "Unknown error." },
+                )
+            }
+        }
+    }
+
+    fun clearPowerActionResult() {
+        _uiState.update { it.copy(sentPowerAction = null, powerActionError = null) }
     }
 
     /** Polls [DashboardRepository.getJobStatus] until the job leaves WAITING/RUNNING, throwing on FAILED/ABORTED. */

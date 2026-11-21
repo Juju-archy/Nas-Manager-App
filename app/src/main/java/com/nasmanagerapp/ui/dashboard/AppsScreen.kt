@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -239,6 +240,13 @@ fun AppsScreen(
     }
 }
 
+// Status and Updates have fixed widths so they sit side by side at the right edge, the app name
+// taking all the remaining room. Status fits the ▶/■ button's touch target, Updates the compact
+// "Update" button (see UpdateButtonPadding) and "Up to date".
+private val StatusColumnWidth = 48.dp
+private val UpdatesColumnWidth = 84.dp
+private val UpdateButtonPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+
 @Composable
 private fun AppsTableHeader() {
     Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
@@ -254,14 +262,14 @@ private fun AppsTableHeader() {
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(0.9f),
+            modifier = Modifier.width(StatusColumnWidth),
         )
         Text(
             "Updates",
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(0.7f),
+            modifier = Modifier.width(UpdatesColumnWidth),
         )
     }
 }
@@ -293,7 +301,7 @@ private fun AppRow(
             // The full state stays available to screen readers.
             val stateLabel = appStateLabel(app.state)
             Row(
-                modifier = Modifier.weight(0.9f).semantics { contentDescription = stateLabel },
+                modifier = Modifier.width(StatusColumnWidth).semantics { contentDescription = stateLabel },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AppRunToggle(
@@ -303,11 +311,15 @@ private fun AppRow(
                     onSetRunning = onSetRunning,
                 )
             }
-            Box(modifier = Modifier.weight(0.7f)) {
+            Box(modifier = Modifier.width(UpdatesColumnWidth)) {
                 when {
                     isUpdating -> CircularProgressIndicator(modifier = Modifier.height(20.dp).width(20.dp), strokeWidth = 2.dp)
-                    app.upgradeAvailable -> OutlinedButton(onClick = onUpgrade, enabled = !isSwitching) { Text("Update") }
-                    else -> Text("Up to date", style = MaterialTheme.typography.bodyMedium, color = HealthyColor)
+                    app.upgradeAvailable -> OutlinedButton(
+                        onClick = onUpgrade,
+                        enabled = !isSwitching,
+                        contentPadding = UpdateButtonPadding,
+                    ) { Text("Update", maxLines = 1) }
+                    else -> Text("Up to date", style = MaterialTheme.typography.bodyMedium, color = HealthyColor, maxLines = 1)
                 }
             }
         }

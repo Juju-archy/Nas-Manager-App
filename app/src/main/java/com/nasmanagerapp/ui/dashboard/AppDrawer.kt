@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Storage
@@ -39,7 +41,8 @@ enum class DrawerDestination { DASHBOARD, STORAGE, REPORTING, APPS, SYSTEM }
 
 /**
  * Content of the left-hand navigation drawer opened from the hamburger button on [DashboardScreen].
- * Current user + Alerts + Logout up top, main navigation (Dashboard, Storage) below — see
+ * Current user + Alerts + Logout up top, main navigation (Dashboard, Storage) below, then the
+ * server's Restart/Shut down actions (each confirmed by a dialog, see `PowerActionDialogs.kt`) — see
  * `CLAUDE.md` for the app's planned navigation surface.
  */
 @Composable
@@ -52,6 +55,7 @@ fun AppDrawerContent(
     onOpenAlerts: () -> Unit,
     onLogout: () -> Unit,
     onSelectDestination: (DrawerDestination) -> Unit,
+    onPowerAction: (PowerAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ModalDrawerSheet(modifier = modifier) {
@@ -131,6 +135,21 @@ fun AppDrawerContent(
             icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
             selected = currentDestination == DrawerDestination.SYSTEM,
             onClick = { onSelectDestination(DrawerDestination.SYSTEM) },
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+        NavigationDrawerItem(
+            label = { Text("Restart") },
+            icon = { Icon(Icons.Filled.RestartAlt, contentDescription = null) },
+            selected = false,
+            onClick = { onPowerAction(PowerAction.RESTART) },
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        NavigationDrawerItem(
+            label = { Text("Shut down") },
+            icon = { Icon(Icons.Filled.PowerSettingsNew, contentDescription = null) },
+            selected = false,
+            onClick = { onPowerAction(PowerAction.SHUTDOWN) },
             modifier = Modifier.padding(horizontal = 12.dp),
         )
         Spacer(Modifier.weight(1f))
