@@ -17,9 +17,11 @@ NasManager is an unofficial companion client for TrueNAS® SCALE servers. It tal
 
 <b>Alerts</b>: list of active alerts with a badge in the menu, and a "Dismiss" button per alert (applied on the server, like in the web interface).
 
-<b>Apps</b>: installed apps with their status, update one app or all of them at once.
+<b>Apps</b>: installed apps with their status, start or stop an app, update one app or all of them at once.
 
-<b>System</b>: general settings, network configuration and interfaces, boot environments (read-only).
+<b>System</b>: general settings, network configuration and interfaces, boot environments (read-only), and services (SMB, NFS, SSH…) you can start, stop or set to start automatically.
+
+<b>Power</b>: restart or shut down the server from the menu, after a confirmation (requires a full admin account).
 
 <b>Security and privacy — please read</b>
 <ul>

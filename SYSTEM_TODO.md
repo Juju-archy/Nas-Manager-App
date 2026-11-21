@@ -73,6 +73,19 @@ deleted after use), server on **TrueNAS 25.10.5**.
 - Not used: `/service/restart`, `/service/reload` and the generic `POST /service/control`
   (`{"verb": "START|STOP|RESTART|RELOAD", ...}`), all OpenAPI-only.
 
+## Restart / Shut down (drawer) — not yet verified live
+
+- `system.shutdown` (docs v25.10): FULL_ADMIN job, params `[reason, {delay}]` — `reason` a
+  non-empty string, `delay` seconds or `null` (immediate, the default). Returns `null`.
+- `system.reboot`: same signature per the middleware source (the v25.10/v25.04 API doc page for it
+  is empty, only linking `system.reboot.info`). **To confirm live** — a `-32602` invalid-params
+  error on the first try would mean the shape is different.
+- The app sends `["Requested from the NasManager app"]` (no options → immediate). The job's reply
+  never comes (the server goes down while running it), so `TrueNasRpcClient.callDetached`
+  takes the call as accepted after 5 s without an error frame, or as soon as the socket drops
+  after the frame went out. An error frame (missing role, invalid params) is still reported. A
+  network blip right after sending is indistinguishable from the server going down — accepted.
+
 ## Deliberate choices / known limits
 
 - **Services edits are only applied on "Save modifications"**: compact table layout, one line per
@@ -123,3 +136,10 @@ deleted after use), server on **TrueNAS 25.10.5**.
 - [ ] Services: a failing start (e.g. a service with an invalid config) → error shown under
   "Services", toggles back to the real state.
 - [ ] Verify back navigation (top-left arrow) from the System screen to the dashboard.
+- [ ] Restart from the drawer → confirmation dialog → "Restart requested" after ≤ 5 s; the server
+  reboots (check the reason in the TrueNAS audit log); the dashboard cards recover on their own
+  once it's back.
+- [ ] Shut down from the drawer → "Shutdown requested"; the server powers off.
+- [ ] Restart/Shut down with a non-admin (read-only) account → error dialog with the server's
+  reason, nothing happens server-side.
+- [ ] Cancel on either confirmation dialog → nothing sent.

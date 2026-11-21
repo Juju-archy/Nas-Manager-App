@@ -1,0 +1,4 @@
+Nouveautés :
+• Redémarrez ou éteignez votre serveur depuis le menu, avec une confirmation à chaque fois. Nécessite un compte administrateur complet
+Améliorations :
+• Écran Apps : le bouton démarrer/arrêter est maintenant collé au bouton Update, ce qui laisse plus de place aux noms des apps

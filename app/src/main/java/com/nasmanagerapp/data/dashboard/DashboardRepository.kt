@@ -489,6 +489,21 @@ class DashboardRepository(
         }.toDashboardResult()
     }
 
+    /**
+     * Restarts the server — the drawer's "Restart" entry. `system.reboot` is a FULL_ADMIN job
+     * taking `[reason, {delay}]` (`reason` required since 25.04, shown in the server's audit log);
+     * its reply never comes since the server goes down while running it, hence
+     * [TrueNasRpcClient.callDetached]. See `SYSTEM_TODO.md`.
+     */
+    suspend fun rebootServer(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching { rpc.callDetached("system.reboot", listOf(POWER_ACTION_REASON)) }.toDashboardResult()
+    }
+
+    /** Powers the server off — same shape and caveats as [rebootServer] (`system.shutdown`). */
+    suspend fun shutdownServer(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching { rpc.callDetached("system.shutdown", listOf(POWER_ACTION_REASON)) }.toDashboardResult()
+    }
+
     /** Calls [method] with [params] as its positional args and deserializes the `result` as [type]. */
     private suspend fun <T> call(
         method: String,
@@ -553,6 +568,7 @@ class DashboardRepository(
         const val DEFAULT_TIMEOUT_MILLIS = 15_000L
         // TrueNAS's own start/stop timeout is 120s; leave it room to answer before giving up.
         const val SERVICE_CONTROL_TIMEOUT_MILLIS = 130_000L
+        const val POWER_ACTION_REASON = "Requested from the NasManager app"
     }
 }
 

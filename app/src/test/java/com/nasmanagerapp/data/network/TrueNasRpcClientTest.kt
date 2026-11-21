@@ -177,6 +177,43 @@ class TrueNasRpcClientTest {
     }
 
     @Test
+    fun `detached call is accepted when no error comes within the window`() {
+        val client = newClient().also { it.loginAsAdmin() }
+        onRequest = { _, _ -> }
+
+        runBlocking { client.callDetached("system.reboot", listOf("reason"), ackWindowMillis = 300) }
+
+        assertEquals("system.reboot", received.last().get("method").asString)
+        assertEquals(JsonParser.parseString("""["reason"]"""), received.last().get("params"))
+    }
+
+    @Test
+    fun `detached call is accepted when the server drops the socket after receiving it`() {
+        val client = newClient().also { it.loginAsAdmin() }
+        onRequest = { _, ws -> ws.close(1001, "going down") }
+
+        runBlocking { client.callDetached("system.shutdown", listOf("reason"), ackWindowMillis = 5_000) }
+    }
+
+    @Test
+    fun `detached call still fails on an error frame`() {
+        val client = newClient().also { it.loginAsAdmin() }
+        onRequest = { frame, ws ->
+            ws.send(
+                """{"jsonrpc":"2.0","id":${frame.get("id")},"error":{"code":-32001,"message":"Method call error",""" +
+                    """"data":{"errname":"EACCES","reason":"Not authorized"}}}"""
+            )
+        }
+
+        try {
+            runBlocking { client.callDetached("system.reboot", listOf("reason"), ackWindowMillis = 5_000) }
+            fail("expected DashboardApiException")
+        } catch (e: DashboardApiException) {
+            assertEquals("Not authorized", e.message)
+        }
+    }
+
+    @Test
     fun `denied login maps to a distinct message`() {
         authResponseType = { "DENIED" }
 

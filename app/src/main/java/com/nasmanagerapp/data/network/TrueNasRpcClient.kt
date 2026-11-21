@@ -114,15 +114,48 @@ class TrueNasRpcClient(
         timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         isJob: Boolean = false,
     ): T {
-        // Network failures keep their IOException as the cause: DashboardRepository needs it to
-        // tell an unreachable local server apart (Android 17 local network permission, see
-        // `LocalNetworkAccess.kt`).
+        val result = mapCallErrors(method, timeoutMillis, isJob) { session -> session.request(method, params, isJob) }
+        return parse(result)
+    }
+
+    /**
+     * Sends a job-yielding call whose reply may never come because running it takes the server
+     * down (`system.reboot`/`system.shutdown`). Returns once the server has accepted it: its
+     * reply arrived, the socket dropped after the call went out, or [ackWindowMillis] passed
+     * without an error frame. A refusal (error frame, e.g. a missing FULL_ADMIN role) still
+     * throws, like [call]. A network blip right after sending is indistinguishable from the server
+     * going down, and is taken as accepted.
+     */
+    suspend fun callDetached(method: String, params: List<Any?>, ackWindowMillis: Long = DETACHED_ACK_WINDOW_MILLIS) {
+        mapCallErrors(method, DEFAULT_TIMEOUT_MILLIS + ackWindowMillis, isJob = true) { session ->
+            try {
+                withTimeoutOrNull(ackWindowMillis) { session.request(method, params, isJob = true) }
+            } catch (e: NotSentException) {
+                throw e
+            } catch (e: IOException) {
+                null
+            }
+        }
+    }
+
+    /**
+     * Runs [block] on an open session within [timeoutMillis] and maps its failures to
+     * [DashboardApiException]s. Network failures keep their IOException as the cause:
+     * DashboardRepository needs it to tell an unreachable local server apart (Android 17 local
+     * network permission, see `LocalNetworkAccess.kt`).
+     */
+    private suspend fun <R> mapCallErrors(
+        method: String,
+        timeoutMillis: Long,
+        isJob: Boolean,
+        block: suspend (Session) -> R,
+    ): R {
         var connected = false
-        val result = try {
+        return try {
             withTimeout(timeoutMillis) {
                 val session = obtainSession()
                 connected = true
-                session.request(method, params, isJob)
+                block(session)
             }
         } catch (e: TimeoutCancellationException) {
             if (!connected) {
@@ -144,7 +177,6 @@ class TrueNasRpcClient(
             Log.w(TAG, "call '$method' failed: ${e.javaClass.name}: ${e.message}")
             throw DashboardApiException("Couldn't reach the server.", e)
         }
-        return parse(result)
     }
 
     private suspend fun obtainSession(): Session = connectLock.withLock {
@@ -302,14 +334,14 @@ class TrueNasRpcClient(
             pending[id] = deferred
             if (isJob) jobCalls.add(id)
             try {
-                if (!isOpen) throw IOException("Connection closed.")
+                if (!isOpen) throw NotSentException()
                 val frame = JsonObject().apply {
                     addProperty("jsonrpc", "2.0")
                     addProperty("id", id)
                     addProperty("method", method)
                     add("params", gson.toJsonTree(params))
                 }
-                if (!socket.send(gson.toJson(frame))) throw IOException("Connection closed.")
+                if (!socket.send(gson.toJson(frame))) throw NotSentException()
                 return deferred.await()
             } finally {
                 pending.remove(id)
@@ -404,11 +436,16 @@ class TrueNasRpcClient(
         }
     }
 
+    /** The socket was already closed, so the frame never left: unlike a later drop, the call surely didn't run. */
+    private class NotSentException : IOException("Connection closed.")
+
     /** The handshake got a plain HTTP response ([httpCode]); turned into a [ProxyRejectedException]. */
     private class HandshakeRejectedException(val httpCode: Int) : Exception("HTTP $httpCode")
 
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 15_000L
+        /** How long [callDetached] waits for a refusal before taking the call as accepted. */
+        const val DETACHED_ACK_WINDOW_MILLIS = 5_000L
         const val CONNECT_TIMEOUT_MILLIS = NetworkModule.TIMEOUT_SECONDS * 1_000L
         const val INVALID_CREDENTIALS = "Invalid username or password."
         const val BACKOFF_BASE_MILLIS = 1_000L

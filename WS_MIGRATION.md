@@ -41,3 +41,5 @@ former REST `/api/v2.0` routes). Wire contract probed live against **TrueNAS 25.
 | POST /api/v2.0/service/start | `service.start` `["<name>"]` (sync, up to 120 s; app timeout 130 s) |
 | POST /api/v2.0/service/stop | `service.stop` `["<name>"]` (same) |
 | PUT /api/v2.0/service/id/{id} | `service.update` `[<id>, {"enable": <bool>}]` |
+| — (new, not a REST port) | `system.reboot` `["<reason>"]` (job, reply never awaited — see `SYSTEM_TODO.md`) |
+| — (new, not a REST port) | `system.shutdown` `["<reason>"]` (same) |
