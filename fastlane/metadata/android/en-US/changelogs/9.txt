@@ -1,0 +1,4 @@
+New:
+• Restart or shut down your server from the menu, each with a confirmation dialog. Requires a full admin account
+Improved:
+• Apps screen: the start/stop button now sits right next to Update, leaving more room for app names

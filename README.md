@@ -59,7 +59,7 @@ The WebSocket URL is derived from the typed address: `https://` → `wss://`, `h
 
 Unencrypted HTTP (`ws://`, no certificate) is allowed to any address (IP or hostname), but only after the user has explicitly checked a box accepting the associated risks. HTTPS (`wss://`) remains recommended — see `CONNECTIVITY_TODO.md` for the connection scenarios covered.
 
-> ⚠️ **Recommendation**: use a TrueNAS account **dedicated to the app**, with reduced permissions (read-only on the screens used, plus app-update permission if you plan to use it), rather than the main admin account — or an API key. The password is sent in the clear if you use HTTP mode; a dedicated account limits the damage in case of interception.
+> ⚠️ **Recommendation**: use a TrueNAS account **dedicated to the app**, with reduced permissions (read-only on the screens used, plus app-update permission if you plan to use it; Restart/Shut down need a full admin account), rather than the main admin account — or an API key. The password is sent in the clear if you use HTTP mode; a dedicated account limits the damage in case of interception.
 
 ## Features
 
@@ -68,11 +68,12 @@ Unencrypted HTTP (`ws://`, no certificate) is allowed to any address (IP or host
 - [x] Session persistence (encrypted credentials + local preferences)
 - [x] Post-login dashboard: system info, CPU (total + per core), memory (Services / ZFS Cache / Free breakdown), pools & storage — CPU/memory/pools refreshed every 2s
 - [x] Detailed reporting graphs for CPU, Memory and Pools & Storage (CPU/Memory history, Pools detail per pool then per disk)
-- [x] Navigation menu (side drawer): Dashboard, Storage, Reporting, Apps, System, Alerts, Logout
+- [x] Navigation menu (side drawer): Dashboard, Storage, Reporting, Apps, System, Alerts, Logout, Restart, Shut down
 - [x] System back button/gesture steps back through the drawer navigation instead of closing the app
 - [x] System alerts (badge, list, "Dismiss" per alert — real server call)
-- [x] Installed apps: status, individual or bulk update ("Update All"); catalog ("Discover Apps") not browsable yet
-- [x] System screen: General settings, Network, Boot (read-only)
+- [x] Installed apps: status, start/stop, individual or bulk update ("Update All"); catalog ("Discover Apps") not browsable yet
+- [x] System screen: General settings, Network, Boot (read-only), Services (start/stop, start automatically)
+- [x] Restart / shut down the server from the menu, with a confirmation dialog (requires a full admin account)
 - [ ] Other NAS features (shares, snapshots, VMs...)
 - [ ] iOS version
 
@@ -148,7 +149,7 @@ app/src/main/java/com/nasmanagerapp/
 - `REPORTING_TODO.md` — reporting graphs tracking (API formats verified live, UI tests pending).
 - `ALERTS_TODO.md` — alerts tracking (`alert.list`/`alert.dismiss`, formats verified live, tests pending).
 - `APPS_TODO.md` — apps tracking (`app.query`/`app.upgrade`, what only exists over WebSocket on the TrueNAS side, tests pending).
-- `SYSTEM_TODO.md` — System screen tracking (`system.general`/`network.configuration`/`interface`/`boot.get_state`/`boot.environment`, formats verified live, tests pending).
+- `SYSTEM_TODO.md` — System screen tracking (`system.general`/`network.configuration`/`interface`/`boot.get_state`/`boot.environment`/`service.*`, formats verified live), plus the drawer's Restart/Shut down (`system.reboot`/`system.shutdown`), tests pending.
 - `SECURITY_TODO.md` — security testing tracking (static and dynamic).
 
 ## Contributors
